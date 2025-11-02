@@ -1,4 +1,4 @@
-# CacheSimulator
+# Cache-Simulator
 This project models the interaction between main memory and cache. The simulator helps visualize cache hits, misses, and replacement strategies, providing insights into the efficiency of caching mechanisms in a computer system.
 
 The project supports various cache cofigurations, replacement policies and memory operations. This is a command line tool written in C, providing a structured approach to understanding cache behavior.
@@ -6,7 +6,7 @@ The project supports various cache cofigurations, replacement policies and memor
 ## Installation
 1. Clone the repository:
 ```
-git clone https://github.com/sha1v1/CacheSimulator.git
+git clone https://github.com/sha1v1/Cache-Simulator.git
 ```
 
 2. Compile the project:
