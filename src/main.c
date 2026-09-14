@@ -138,6 +138,52 @@ void handleWrite(Cache *cache, Memory *memory, unsigned int addr, char value) {
 }
 
 
+/**
+ * @brief Discards the remainder of the current line of input.
+ *
+ * @return int Returns:
+ *              - 1 if the line was discarded and more input may follow
+ *              - 0 if the input stream ended while discarding
+ */
+int discardInputLine(){
+    int c;
+    while((c = getchar()) != '\n' && c != EOF);
+    return c != EOF;
+}
+
+/**
+ * @brief Reads a single value from stdin, rejecting anything that doesn't match.
+ *
+ * @param format the scanf conversion specifier to apply
+ * @param out where the converted value is stored
+ * @return int Returns:
+ *              - 1 on a successful read
+ *              - 0 if the input didn't match the format (the bad line is discarded)
+ *              - -1 if the input stream ended
+ *
+ * Without this, a failed scanf() would leave the offending characters in the
+ * buffer and the value unset, so the menu loop would spin on them forever.
+ */
+int readValue(const char *format, void *out){
+    int matched = scanf(format, out);
+
+    if(matched == EOF){
+        return -1;
+    }
+    if(matched != 1){
+        //drop the unreadable input so the next prompt starts on a fresh line
+        return discardInputLine() ? 0 : -1;
+    }
+    return 1;
+}
+
+/**
+ * @brief Reports that the input stream ended before the user asked to exit.
+ */
+void reportEndOfInput(){
+    printf("\nEnd of input. Exiting Cache Simulator...\n");
+}
+
 int run(){
     //general info
     printf("\n--- Cache Simulator ---\n");
@@ -147,27 +193,57 @@ int run(){
     printf("4. Exit\n");
 
     while(1){
-        int choice; //users selection
-        printf("\nEnter your choice: ");
-        scanf("%d", &choice);
-        unsigned int addr;
-        char valueToBeWritten;
+        //an unreadable choice stays 0, which the switch reports as invalid
+        int choice = 0; //users selection
+        unsigned int addr = 0;
+        char valueToBeWritten = 0;
+        int status;
 
+        printf("\nEnter your choice: ");
+        if(readValue("%d", &choice) < 0){
+            reportEndOfInput();
+            return 0;
+        }
 
         switch(choice){
             case 1:
                 printf("Enter address (hex): 0x");
-                scanf("%x", &addr);
+                status = readValue("%x", &addr);
+                if(status < 0){
+                    reportEndOfInput();
+                    return 0;
+                }
+                if(status == 0){
+                    printf("Invalid address. Try again\n");
+                    break;
+                }
 
                 handleRead(cache, memory, addr, config->replacementPolicy);
                 break;
             
             case 2:
                 printf("Enter address (hex): 0x");
-                scanf("%x", &addr);
+                status = readValue("%x", &addr);
+                if(status < 0){
+                    reportEndOfInput();
+                    return 0;
+                }
+                if(status == 0){
+                    printf("Invalid address. Try again\n");
+                    break;
+                }
+
                 printf("Enter value (char): ");
-                scanf(" %c", &valueToBeWritten);
-                
+                status = readValue(" %c", &valueToBeWritten);
+                if(status < 0){
+                    reportEndOfInput();
+                    return 0;
+                }
+                if(status == 0){
+                    printf("Invalid value. Try again\n");
+                    break;
+                }
+
                 handleWrite(cache, memory, addr, valueToBeWritten);
 
                 break;
