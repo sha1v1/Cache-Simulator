@@ -25,9 +25,22 @@ if (getcwd(cwd, sizeof(cwd)) != NULL) {
     //i.e. buffer stores a valid string 
     while(fgets(buffer, sizeof(buffer), configFile)){
         
+        //blank lines (including a trailing newline at the end of the file)
+        //hold no setting, so skip them before trying to parse a pair
+        if(buffer[strspn(buffer, " \t\r\n")] == '\0'){
+            continue;
+        }
+
         //to store the key-value pair in the current line
         char key[25], value[25];
-        sscanf(buffer, "%24[^=]=%24s", key, value);
+
+        //without this check a failed parse would leave key and value unset,
+        //and every branch below would then read uninitialized memory
+        if(sscanf(buffer, "%24[^=]=%24s", key, value) != 2){
+            printf("Malformed line in config file: %s", buffer);
+            exit(1);
+        }
+
         if(strcmp(key, "num_sets") == 0){
             config->numSets = atoi(value);
             printf("Read the number of sets\n");
