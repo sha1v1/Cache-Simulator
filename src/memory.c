@@ -169,7 +169,23 @@ int writeToMemory(Memory *memory, int address, char value){
  * from the computed address. In case the page hasn't been allocated yet, initialize it first.
  */
 int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** block_data) {
-    if(addr >= memory->total_size){
+    //guard before dereferencing, as every other function in this file does.
+    //Without this a half-built Memory (size set, page_table still NULL) passes
+    //the bounds check and the loop below fills the block with readFromMemory's
+    //error returns, reporting success while handing back 32 bytes of nothing.
+    if(!memory || !memory->page_table){
+        fprintf(stderr, "Error: Attempting to read from uninitialized memory\n");
+        return -1;
+    }
+
+    if(!block_data){
+        fprintf(stderr, "Error: no output pointer supplied for the block\n");
+        return -1;
+    }
+
+    //total_size is validated positive in initializeMemory, so the cast is safe
+    //and keeps this from being a signed/unsigned comparison
+    if(addr >= (unsigned int)memory->total_size){
         fprintf(stderr, "Invalid Memory address %u\n", addr);
         return -1;
     }

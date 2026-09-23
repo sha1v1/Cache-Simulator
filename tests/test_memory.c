@@ -111,6 +111,18 @@ void test_write_to_memory_uninitialized(void){
     TEST_ASSERT_EQUAL(0, ret2);
 }
 
+//fetchBlockFromMemory must refuse an unusable Memory rather than dereferencing
+//it, and must not report success while filling the block with error codes.
+void test_fetch_block_uninitialized_memory(void){
+    Memory invalid_memory = {0};
+    char *block = NULL;
+
+    TEST_ASSERT_EQUAL(-1, fetchBlockFromMemory(NULL, 0, &block));
+    TEST_ASSERT_EQUAL(-1, fetchBlockFromMemory(&invalid_memory, 0, &block));
+    TEST_ASSERT_EQUAL(-1, fetchBlockFromMemory(&memory, 0, NULL));
+    TEST_ASSERT_NULL(block);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -126,5 +138,6 @@ int main(void) {
     RUN_TEST(test_read_from_memory_invalid_address);
     RUN_TEST(test_write_to_memory_invalid_address);
     RUN_TEST(test_write_to_memory_uninitialized);
+    RUN_TEST(test_fetch_block_uninitialized_memory);
     return UNITY_END();
 }
