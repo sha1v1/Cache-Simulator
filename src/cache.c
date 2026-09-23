@@ -204,16 +204,11 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, const char *policy)
 
     Set *curSet = &(cache->cacheSets[setIndex]);
     
-    // Find an empty line
+    // Find an empty line: nothing has to be evicted to make room
     for (int i = 0; i < curSet->linesPerSet; i++) {
         if (!(curSet->cacheLines[i].validBit)) {
-        printf("%d\n", setIndex);
-            Line* line =  &(curSet->cacheLines[i]);  // Return the empty line
-            printf("%p\n", line);
-            // printf("%p\n", &curSet->cacheLines);
-            return line;
-        printf("here8\n");
-            exit(1);
+            printf("Set %d: loading into empty line %d\n", setIndex, i);
+            return &(curSet->cacheLines[i]);
         }
     }
 
