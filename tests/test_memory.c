@@ -26,13 +26,13 @@ void test_initialize_memory(){
 }
 
 void test_read_from_memory(void){
-    char value = readFromMemory(&memory, 500);
+    int value = readFromMemory(&memory, 500);
     TEST_ASSERT(value >= 32 && value <= 126);
 }
 
 void test_write_to_memory(void){
     writeToMemory(&memory, 500, 42);
-    char value = readFromMemory(&memory, 500);
+    int value = readFromMemory(&memory, 500);
     TEST_ASSERT_EQUAL(42, value);
 
 }
@@ -47,7 +47,7 @@ void test_write_then_read_untouched_neighbour(void){
 }
 
 void test_out_of_bounds_access(void) {
-    char read_value = readFromMemory(&memory, 2000);  // Out of bounds
+    int read_value = readFromMemory(&memory, 2000);  // Out of bounds
     TEST_ASSERT_EQUAL(-1, read_value);               // Should return -1
 
     int write_success = writeToMemory(&memory, 2000, 42);

@@ -194,7 +194,7 @@ int getTagBits(unsigned int addr, int num_sets)
  *      - -1: Error
  * 
  */
-int checkCache(Cache *cache, unsigned int addr, char* out_data){
+int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data){
     if(!cache || !cache->cache_sets){
         printf("Error: cache is not initialized\n");
         return -1;
@@ -231,11 +231,11 @@ int checkCache(Cache *cache, unsigned int addr, char* out_data){
  * 
  * @param cache a pointer to the cache structure
  * @param addr The memory address being accessed.
- * @param policy A string indicating the replacement policy (e.g., "LRU", "RANDOM").
+ * @param policy Which line a full set gives up (POLICY_LRU, POLICY_RANDOM).
  * 
  * @returns *Line: pointer to the line to be replaced/updated
  */
-Line *handleLineReplacement(Cache *cache, unsigned int addr, const char *policy){
+Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy policy){
 
     int set_index = getSetIndex(addr, cache->num_sets);
 
@@ -249,14 +249,14 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, const char *policy)
         }
     }
 
-    // Apply replacement policy
-    if (strcmp(policy, "LRU") == 0) {
-        return leastRecentlyUsed(cur_set);
-    } else if (strcmp(policy, "RANDOM") == 0) {
-        return randomReplacement(cur_set);
+    // Apply replacement policy. No default case: -Wswitch then warns here if a
+    // policy is added to the enum and this switch is not updated.
+    switch (policy) {
+        case POLICY_LRU:    return leastRecentlyUsed(cur_set);
+        case POLICY_RANDOM: return randomReplacement(cur_set);
     }
 
-    printf("Error: Unknown replacement policy '%s'\n", policy);
+    printf("Error: Unknown replacement policy %d\n", (int)policy);
     return NULL;
 }
 
@@ -303,7 +303,7 @@ Line *randomReplacement(Set *set)
  *
  * Used after cache hit/miss to keep it consistent with the main memory.
  */
-void updateCache(Line *line, int tag_bits, const char *block_data)
+void updateCache(Line *line, int tag_bits, const uint8_t *block_data)
 {
     // Line *line = &(cache->cache_sets[set_index].cache_lines);
     line->valid_bit = true;
@@ -382,7 +382,7 @@ void displayCache(Cache *cache)
             //'.' for the rest, the way hexdump does.
             for (size_t k = 0; k < sizeof(line->block); k++)
             {
-                unsigned char byte = (unsigned char)line->block[k];
+                uint8_t byte = line->block[k];
                 putchar((byte >= 32 && byte <= 126) ? byte : '.');
             }
             putchar('\n');

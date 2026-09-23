@@ -8,7 +8,7 @@ extern unsigned int global_time;
 typedef struct {
     bool valid_bit;
     unsigned int tag;   
-    char block[BLOCK_SIZE];   //raw bytes, not a string - no terminator
+    uint8_t block[BLOCK_SIZE];   //raw bytes, not a string - no terminator
     unsigned int last_access_time;
 } Line;
 
@@ -29,11 +29,11 @@ void initializeSets(Set* sets, int num_sets, int lines_per_set);
 int getSetIndex(unsigned int addr, int num_sets);
 int getBlockOffset(unsigned int addr);
 int getTagBits(unsigned int addr, int num_sets);
-int checkCache(Cache *cache, unsigned int addr, char* out_data);
-Line *handleLineReplacement(Cache *cache, unsigned int addr, const char *policy);
+int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data);
+Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy policy);
 Line *randomReplacement(Set *set);
 Line* leastRecentlyUsed(Set *set);
-void updateCache(Line *line, int tag_bits, const char *block_data);
+void updateCache(Line *line, int tag_bits, const uint8_t *block_data);
 void displayCache(Cache *c);
 void freeCache(Cache *cache);
 

@@ -38,7 +38,7 @@ void init(){
 //this is only supposed to handle a read operation. In case of a hit, its quite simple.
 //In case of a cold miss, the cache line is loaded with the data  blcok fetched from memory.
 //In case of a conflict miss, suitable line based on the eviction policy is removed followed by fetching of the data block from the memory.
-char handleRead(Cache *cache, Memory *memory, unsigned int addr, const char policy[10]){
+int handleRead(Cache *cache, Memory *memory, unsigned int addr, ReplacementPolicy policy){
     //user enters an address
     //look for this in the cache first
     //if its a hit
@@ -53,26 +53,26 @@ char handleRead(Cache *cache, Memory *memory, unsigned int addr, const char poli
         // fetch block from memory, evict a line from cache based on replacement policy, load into cache
         // exit method
     
-    //look in cache
-    char fetched_data;
+    //look in cache. The byte comes back through a uint8_t out-parameter and is
+    //returned as an int, so a legitimate 0xFF can never look like an error code.
+    uint8_t cached_byte;
     int hit;
-    hit = checkCache(cache, addr, &fetched_data);
+    hit = checkCache(cache, addr, &cached_byte);
 
     switch(hit){
         case 1:
         printf("Cache hit!\n");
-            printf("%c\n", fetched_data);
-            return fetched_data; //successfull cache access, didnt have to bother looking into memory
+            printf("%c\n", cached_byte);
+            return cached_byte; //successfull cache access, didnt have to bother looking into memory
         
         case 0:
             printf("Cache miss! Fetching data from memory...\n");
-            char *block_data = NULL;
+            uint8_t *block_data = NULL;
             int err = fetchBlockFromMemory(memory, addr, &block_data); // Fetch block from memory
             if(err != 0){
                 printf("Error: Failed to fetch block from memory (error code %d).\n", err);
                 return err;
             }
-            fetched_data = (char)readFromMemory(memory, addr);
 
             if (!block_data) {
                 printf("Error: Failed to fetch block from memory.\n");
@@ -97,8 +97,9 @@ char handleRead(Cache *cache, Memory *memory, unsigned int addr, const char poli
             printf("Block offset: %d\n", block_offset);
             printf("Data at address 0x%X (loaded from memory): %d\n", addr, block_data[block_offset]);
 
+            int fetched_byte = block_data[block_offset];
             free(block_data); // Free the block data
-            return fetched_data;
+            return fetched_byte;
 
         default: // Error state
             printf("Error: Invalid cache access.\n");
@@ -107,7 +108,7 @@ char handleRead(Cache *cache, Memory *memory, unsigned int addr, const char poli
     }
 }
 
-void handleWrite(Cache *cache, Memory *memory, unsigned int addr, char value) {
+void handleWrite(Cache *cache, Memory *memory, unsigned int addr, uint8_t value) {
     int hit = checkCache(cache, addr, NULL);  //check if address exists in cache
 
     //write-around so only update cache if there is a hit

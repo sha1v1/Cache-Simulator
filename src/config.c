@@ -54,11 +54,29 @@ if (getcwd(cwd, sizeof(cwd)) != NULL) {
             printf("read lines per set\n");
         }
         else if(strcmp(key, "replacement_policy") == 0){
-            strcpy(config->replacement_policy, value);
+            if(strcmp(value, "LRU") == 0){
+                config->replacement_policy = POLICY_LRU;
+            }
+            else if(strcmp(value, "RANDOM") == 0){
+                config->replacement_policy = POLICY_RANDOM;
+            }
+            else{
+                printf("Error: unknown replacement_policy '%s' (expected LRU or RANDOM)\n", value);
+                exit(1);
+            }
             printf("Read the replacement policy\n");
         }
         else if(strcmp(key,"write_policy") == 0){
-            strcpy(config->write_policy, value);
+            if(strcmp(value, "WRITE_THROUGH") == 0){
+                config->write_policy = WRITE_THROUGH;
+            }
+            else if(strcmp(value, "WRITE_BACK") == 0){
+                config->write_policy = WRITE_BACK;
+            }
+            else{
+                printf("Error: unknown write_policy '%s' (expected WRITE_THROUGH or WRITE_BACK)\n", value);
+                exit(1);
+            }
             printf("read write policy\n");
         }
         else{

@@ -31,7 +31,7 @@ void initializeMemory(Memory *memory, Config *config){
     memory->num_pages = (memory->total_size + memory->page_size - 1)/memory->page_size; //round up
 
     //allocate memory for array of page pointers
-    memory->page_table = (char **)calloc(memory->num_pages, sizeof(char *));
+    memory->page_table = (uint8_t **)calloc(memory->num_pages, sizeof(uint8_t *));
     if(!memory->page_table){
         printf("Error: memoery allocation failed for page table\n");
         exit(1);
@@ -71,7 +71,7 @@ int allocatePage(Memory *memory, int page_index) {
     if (memory->page_table[page_index] == NULL) {
 
         //allocate memory for the page
-        memory->page_table[page_index] = (char *)malloc(memory->page_size * sizeof(char));
+        memory->page_table[page_index] = (uint8_t *)malloc(memory->page_size * sizeof(uint8_t));
         if (!memory->page_table[page_index]) {
             printf("Error: Page allocation failed.\n");
             return -3;
@@ -129,7 +129,7 @@ int readFromMemory(Memory *memory, int address){
  * Calculate the page index and offset from the address. If page hasn't been allocated (initialized) yet,
  * it is loaded with random values and the memory address is then written to with the provided value.
  */
-int writeToMemory(Memory *memory, int address, char value){
+int writeToMemory(Memory *memory, int address, uint8_t value){
     if(!memory || !memory->page_table){
         printf("Error: Attempting to write to uninitialized memory\n");
         return 0;
@@ -168,7 +168,7 @@ int writeToMemory(Memory *memory, int address, char value){
  * Figure out the starting address of the block from the given address and fetch 32 bytes of data
  * from the computed address. In case the page hasn't been allocated yet, initialize it first.
  */
-int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** block_data) {
+int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t** block_data) {
     //guard before dereferencing, as every other function in this file does.
     //Without this a half-built Memory (size set, page_table still NULL) passes
     //the bounds check and the loop below fills the block with readFromMemory's
@@ -201,7 +201,16 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** block_data) {
     //offsets 0..BLOCK_SIZE-1 are all addressable, so reserving the last byte
     //for a '\0' would silently destroy the byte the caller asked for.
     for (int i = 0; i < BLOCK_SIZE; i++) {
-        (*block_data)[i] = readFromMemory(memory, block_start_addr + i);
+        //readFromMemory returns a byte as 0..255 and any failure as a negative
+        //value, so the two can be told apart here rather than storing an error
+        //code into the block as if it were data.
+        int value = readFromMemory(memory, block_start_addr + i);
+        if (value < 0) {
+            free(*block_data);
+            *block_data = NULL;
+            return value;
+        }
+        (*block_data)[i] = (uint8_t)value;
     }
     return 0; // for success
 }

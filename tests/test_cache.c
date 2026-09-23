@@ -7,7 +7,7 @@ Cache *cache;
 
 /* updateCache copies a whole BLOCK_SIZE block, so tests must supply one.
    Build it from a short label and leave the remaining bytes zero. */
-static void makeBlock(char out[BLOCK_SIZE], const char *label){
+static void makeBlock(uint8_t out[BLOCK_SIZE], const char *label){
     memset(out, 0, BLOCK_SIZE);
     memcpy(out, label, strlen(label));
 }
@@ -28,7 +28,7 @@ void test_initialize_cache(void) {
     TEST_ASSERT_EQUAL(2, cache->lines_per_set);  // Two lines per set
     TEST_ASSERT_NOT_NULL(cache->cache_sets);
 
-    char zero_block[BLOCK_SIZE];
+    uint8_t zero_block[BLOCK_SIZE];
     memset(zero_block, 0, BLOCK_SIZE);
 
     for (int i = 0; i < 4; i++) {
@@ -43,14 +43,14 @@ void test_initialize_cache(void) {
 
 void test_cacheAccess(void) {
     unsigned int address = 0x1234;
-    char out_data;
+    uint8_t out_data;
 
     // Check miss
     int result = checkCache(cache, address, &out_data);
     TEST_ASSERT_EQUAL(0, result);
 
     // Simulate fetching data and updating cache
-    char block_data[BLOCK_SIZE];
+    uint8_t block_data[BLOCK_SIZE];
     makeBlock(block_data, "BlockData");
     updateCache(&cache->cache_sets[getSetIndex(address, 4)].cache_lines[0],
                 getTagBits(address, 4),
@@ -67,7 +67,7 @@ void test_update_cache(void) {
     int set_index = 1;
     int line_index = 0;
     int tag_bits = 6;
-    char block_data[BLOCK_SIZE];
+    uint8_t block_data[BLOCK_SIZE];
     makeBlock(block_data, "NewData");
 
     Line *line = &cache->cache_sets[set_index].cache_lines[line_index];
@@ -83,20 +83,20 @@ void test_RandomReplacement(void){
     unsigned int address2 = 0x00a4; // Maps to set 1, line 1
     unsigned int address3 = 0x0234; // Maps to set 1, should replace a random line
 
-    char block1[BLOCK_SIZE], block2[BLOCK_SIZE], block3[BLOCK_SIZE];
+    uint8_t block1[BLOCK_SIZE], block2[BLOCK_SIZE], block3[BLOCK_SIZE];
     makeBlock(block1, "Block1");
     makeBlock(block2, "Block2");
     makeBlock(block3, "Block3");
 
     // Access first two addresses (fills both lines)
     checkCache(cache, address1, NULL);
-    updateCache(handleLineReplacement(cache, address1, "RANDOM"), getTagBits(address1, 4), block1);
+    updateCache(handleLineReplacement(cache, address1, POLICY_RANDOM), getTagBits(address1, 4), block1);
 
     checkCache(cache, address2, NULL);
-    updateCache(handleLineReplacement(cache, address2, "RANDOM"), getTagBits(address2, 4), block2);
+    updateCache(handleLineReplacement(cache, address2, POLICY_RANDOM), getTagBits(address2, 4), block2);
 
     // Access a new address to trigger replacement
-    Line *replaced_line = handleLineReplacement(cache, address3, "RANDOM");
+    Line *replaced_line = handleLineReplacement(cache, address3, POLICY_RANDOM);
     updateCache(replaced_line, getTagBits(address3, 4), block3);
 
     // Verify Random replacement
@@ -113,17 +113,17 @@ void test_LRUReplacement(void) {
     unsigned int address2 = 0x00a4; // Maps to set 0, line 1
     unsigned int address3 = 0x0234; // Maps to set 0, should replace line 0 (LRU)
 
-    char block1[BLOCK_SIZE], block2[BLOCK_SIZE], block3[BLOCK_SIZE];
+    uint8_t block1[BLOCK_SIZE], block2[BLOCK_SIZE], block3[BLOCK_SIZE];
     makeBlock(block1, "Block1");
     makeBlock(block2, "Block2");
     makeBlock(block3, "Block3");
 
     // Access first two addresses (fills both lines)
     checkCache(cache, address1, NULL);
-    updateCache(handleLineReplacement(cache, address1, "LRU"), getTagBits(address1, 4), block1);
+    updateCache(handleLineReplacement(cache, address1, POLICY_LRU), getTagBits(address1, 4), block1);
 
     checkCache(cache, address2, NULL);
-    updateCache(handleLineReplacement(cache, address2, "LRU"), getTagBits(address2, 4), block2);
+    updateCache(handleLineReplacement(cache, address2, POLICY_LRU), getTagBits(address2, 4), block2);
 
     //access line 1 again to make line 0 the least recently use line
     checkCache(cache, address2, NULL);
@@ -131,7 +131,7 @@ void test_LRUReplacement(void) {
     // Access a new address to trigger replacement
     checkCache(cache, address3, NULL);
 
-    Line *replaced_line = handleLineReplacement(cache, address3, "LRU");
+    Line *replaced_line = handleLineReplacement(cache, address3, POLICY_LRU);
     updateCache(replaced_line, getTagBits(address3, 4), block3);
     
     // Verify LRU replacement, line 0 should be replaced
