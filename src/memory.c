@@ -151,7 +151,9 @@ int writeToMemory(Memory *memory, int address, char value){
  * 
  * @param memory A pointer to the Memory structure
  * @param addr The address that triggered the fetching of the data block
- * @returns blockData: An array containing the block data.
+ * @returns blockData: An array of exactly BLOCK_SIZE raw bytes. It is NOT
+ *          NUL-terminated - every byte is data, so callers must use
+ *          BLOCK_SIZE rather than string functions.
  * 
  * Figure out the starting address of the block from the given address and fetch 32 bytes of data
  * from the computed address. In case the page hasn't been allocated yet, initialize it first.
@@ -162,17 +164,19 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** blockData) {
         return -1;
     }
 
-    int blockStartAddr = addr & ~31;  // Align to block start
-    *blockData = malloc(32 * sizeof(char));
+    int blockStartAddr = addr & ~BLOCK_MASK;  // Align to block start
+    *blockData = malloc(BLOCK_SIZE * sizeof(char));
     if (!*blockData) {
         fprintf(stderr, "Memory allocation failed\n");
         return -3; // Erroneous fetch attempt: malloc failed
     }
-    
-    for (int i = 0; i < 32; i++) {
+
+    //every one of the BLOCK_SIZE bytes is data. No terminator is written:
+    //offsets 0..BLOCK_SIZE-1 are all addressable, so reserving the last byte
+    //for a '\0' would silently destroy the byte the caller asked for.
+    for (int i = 0; i < BLOCK_SIZE; i++) {
         (*blockData)[i] = readFromMemory(memory, blockStartAddr + i);
     }
-    (*blockData)[31] = '\0';
     return 0; // for success
 }
 /**

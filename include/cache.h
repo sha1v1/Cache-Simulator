@@ -8,7 +8,7 @@ extern unsigned int globalTime;
 typedef struct {
     bool validBit;
     unsigned int tag;   
-    char block[32];
+    char block[BLOCK_SIZE];   //raw bytes, not a string - no terminator
     unsigned int lastAccessTime;
 } Line;
 

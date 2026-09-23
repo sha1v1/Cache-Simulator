@@ -102,7 +102,7 @@ int getSetIndex(unsigned int addr, int numSets)
 {
     // right shift 5 bits to get rid of block offset bits
     // Then isolate set bits.
-    return (addr >> 5) & (numSets - 1);
+    return (addr >> BLOCK_OFFSET_BITS) & (numSets - 1);
 }
 
 /**
@@ -113,7 +113,7 @@ int getSetIndex(unsigned int addr, int numSets)
 int getBlockOffset(unsigned int addr)
 {
     // 32 bytes/line => 5 bits to represent
-    return addr & 31;
+    return addr & BLOCK_MASK;
 }
 
 /**
@@ -125,7 +125,7 @@ int getBlockOffset(unsigned int addr)
 int getTagBits(unsigned int addr, int numSets)
 {
     int setBits = (int)log2(numSets); // number of set bits
-    return addr >> (5 + setBits);
+    return addr >> (BLOCK_OFFSET_BITS + setBits);
 }
 
 /**
@@ -266,7 +266,8 @@ Line *randomReplacement(Set *set)
  *
  * @param line pointer to the line to be updated
  * @param the the value which the tag bits are to be set to
- * @param blockData a char array containing the new data that replaces the block in the line.
+ * @param blockData the new data for the line: must point to at least
+ *        BLOCK_SIZE readable bytes, all of which are copied.
  *
  * Used after cache hit/miss to keep it consistent with the main memory.
  */
@@ -277,7 +278,10 @@ void updateCache(Line *line, int tagBits, const char *blockData)
     line->tag = tagBits;
     line->lastAccessTime = globalTime++; // update to current time
 
-    strcpy(line->block, blockData);      // Copy data into cache block
+    //blockData is BLOCK_SIZE raw bytes, not a string: copy a fixed count so a
+    //zero byte inside the block neither truncates the copy nor, in its absence,
+    //lets the copy run past the end of either buffer.
+    memcpy(line->block, blockData, sizeof(line->block));
 }
 
 /**
@@ -338,8 +342,18 @@ void displayCache(Cache *cache)
         for (int j = 0; j < linesPerSet; j++)
         {
             Line *line = &set->cacheLines[j];
-            printf("%3d | %4d | %5d | %7u | %s\n",
-                   i, j, line->validBit, line->tag, line->block);
+            printf("%3d | %4d | %5d | %7u | ",
+                   i, j, line->validBit, line->tag);
+
+            //the block holds arbitrary bytes and has no terminator, so %s would
+            //read past the array. Print printable ASCII as-is and stand in a
+            //'.' for the rest, the way hexdump does.
+            for (size_t k = 0; k < sizeof(line->block); k++)
+            {
+                unsigned char byte = (unsigned char)line->block[k];
+                putchar((byte >= 32 && byte <= 126) ? byte : '.');
+            }
+            putchar('\n');
         }
     }
     printf("-----------------------------------------\n");
