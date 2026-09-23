@@ -16,6 +16,16 @@
  * initialized to NULL.
  */
 void initializeMemory(Memory *memory, Config *config){
+    //fetchBlockFromMemory aligns down to a block boundary and always reads
+    //BLOCK_SIZE bytes, so a memory that doesn't end on a block boundary would
+    //have its last block run past the end and store readFromMemory's error
+    //returns as if they were data.
+    if (config->main_memory_size <= 0 || config->main_memory_size % BLOCK_SIZE != 0) {
+        printf("Error: main_memory_size must be a positive multiple of %d (got %d)\n",
+               BLOCK_SIZE, config->main_memory_size);
+        exit(1);
+    }
+
     memory->total_size = config->main_memory_size;
     memory->page_size = 256; //fixed page size
     memory->num_pages = (memory->total_size + memory->page_size - 1)/memory->page_size; //round up

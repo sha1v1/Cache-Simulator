@@ -1,7 +1,6 @@
 #include "../include/cache.h"
 #include "../include/memory.h"
 #include <stdio.h>
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,6 +67,25 @@ Cache *initalizeCache(Config *config)
         return NULL;
     }
 
+    //getSetIndex masks address bits, which only computes blockNumber % num_sets
+    //when num_sets is a power of two. Any other value leaves an address bit in
+    //neither the set index nor the tag, so two different blocks end up sharing a
+    //(set, tag) label and alias onto each other's data.
+    //n & (n-1) clears the lowest set bit: zero means only one bit was set.
+    if (config->num_sets <= 0 || (config->num_sets & (config->num_sets - 1)) != 0)
+    {
+        printf("Error: num_sets must be a positive power of two (got %d)\n",
+               config->num_sets);
+        exit(1);
+    }
+
+    if (config->lines_per_set <= 0)
+    {
+        printf("Error: lines_per_set must be positive (got %d)\n",
+               config->lines_per_set);
+        exit(1);
+    }
+
     Cache *cache = (Cache *)malloc(sizeof(Cache));
     if (!cache)
     {
@@ -117,6 +135,26 @@ int getBlockOffset(unsigned int addr)
 }
 
 /**
+ * @brief Number of address bits needed to index num_sets sets.
+ *
+ * @param num_sets number of Sets in the Cache; must be a power of two
+ *
+ * Integer equivalent of log2(). Counting the shifts keeps this exact, where a
+ * floating point log2() would have to be truncated back to an int and any
+ * platform returning 2.9999.. for log2(8) would silently size the field wrong.
+ */
+static int setIndexBits(int num_sets)
+{
+    int bits = 0;
+    while (num_sets > 1)
+    {
+        num_sets >>= 1;
+        bits++;
+    }
+    return bits;
+}
+
+/**
  * @brief Given an address and the number of sets, get the tag bits.
  *
  * @param addr the address from which the tag bits are to be calculated
@@ -124,8 +162,7 @@ int getBlockOffset(unsigned int addr)
  */
 int getTagBits(unsigned int addr, int num_sets)
 {
-    int set_bits = (int)log2(num_sets); // number of set bits
-    return addr >> (BLOCK_OFFSET_BITS + set_bits);
+    return addr >> (BLOCK_OFFSET_BITS + setIndexBits(num_sets));
 }
 
 /**
