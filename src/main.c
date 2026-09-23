@@ -54,51 +54,51 @@ char handleRead(Cache *cache, Memory *memory, unsigned int addr, const char poli
         // exit method
     
     //look in cache
-    char fetchedData;
+    char fetched_data;
     int hit;
-    hit = checkCache(cache, addr, &fetchedData);
+    hit = checkCache(cache, addr, &fetched_data);
 
     switch(hit){
         case 1:
         printf("Cache hit!\n");
-            printf("%c\n", fetchedData);
-            return fetchedData; //successfull cache access, didnt have to bother looking into memory
+            printf("%c\n", fetched_data);
+            return fetched_data; //successfull cache access, didnt have to bother looking into memory
         
         case 0:
             printf("Cache miss! Fetching data from memory...\n");
-            char *blockData = NULL;
-            int err = fetchBlockFromMemory(memory, addr, &blockData); // Fetch block from memory
+            char *block_data = NULL;
+            int err = fetchBlockFromMemory(memory, addr, &block_data); // Fetch block from memory
             if(err != 0){
                 printf("Error: Failed to fetch block from memory (error code %d).\n", err);
                 return err;
             }
-            fetchedData = (char)readFromMemory(memory, addr);
+            fetched_data = (char)readFromMemory(memory, addr);
 
-            if (!blockData) {
+            if (!block_data) {
                 printf("Error: Failed to fetch block from memory.\n");
                 return -1;
             }
 
             // Handle cache replacement for the fetched block
-            Line *lineToReplace = handleLineReplacement(cache, addr, policy);
+            Line *line_to_replace = handleLineReplacement(cache, addr, policy);
 
-            if (!lineToReplace) {
+            if (!line_to_replace) {
                 printf("Error: Cache replacement failed.\n");
-                free(blockData); // Free the block data fetched from memory
+                free(block_data); // Free the block data fetched from memory
                 return 1;
             }
 
             // Update the cache line with the fetched block
-            int tagBits = getTagBits(addr, cache->numSets);
+            int tag_bits = getTagBits(addr, cache->num_sets);
 
-            updateCache(lineToReplace, tagBits, blockData);
+            updateCache(line_to_replace, tag_bits, block_data);
             // Get the data at the specific block offset within the fetched block
-            int blockOffset = getBlockOffset(addr);
-            printf("Block offset: %d\n", blockOffset);
-            printf("Data at address 0x%X (loaded from memory): %d\n", addr, blockData[blockOffset]);
+            int block_offset = getBlockOffset(addr);
+            printf("Block offset: %d\n", block_offset);
+            printf("Data at address 0x%X (loaded from memory): %d\n", addr, block_data[block_offset]);
 
-            free(blockData); // Free the block data
-            return fetchedData;
+            free(block_data); // Free the block data
+            return fetched_data;
 
         default: // Error state
             printf("Error: Invalid cache access.\n");
@@ -115,16 +115,16 @@ void handleWrite(Cache *cache, Memory *memory, unsigned int addr, char value) {
         printf("Cache hit! Writing '%c' to cache at address 0x%X\n", value, addr);
 
         // Update cache
-        int setIndex = getSetIndex(addr, cache->numSets);
-        int tagBits = getTagBits(addr, cache->numSets);
-        int blockOffset = getBlockOffset(addr);
-        Set *curSet = &cache->cacheSets[setIndex];
+        int set_index = getSetIndex(addr, cache->num_sets);
+        int tag_bits = getTagBits(addr, cache->num_sets);
+        int block_offset = getBlockOffset(addr);
+        Set *cur_set = &cache->cache_sets[set_index];
 
-        for (int i = 0; i < curSet->linesPerSet; i++) {
-            Line *line = &curSet->cacheLines[i];
-            if (line->validBit && line->tag == tagBits) {
-                line->block[blockOffset] = value; 
-                line->lastAccessTime = globalTime++;
+        for (int i = 0; i < cur_set->lines_per_set; i++) {
+            Line *line = &cur_set->cache_lines[i];
+            if (line->valid_bit && line->tag == tag_bits) {
+                line->block[block_offset] = value; 
+                line->last_access_time = global_time++;
                 printf("data written to cache at address 0x%X\n", addr);
                 break;
             }
@@ -196,7 +196,7 @@ int run(){
         //an unreadable choice stays 0, which the switch reports as invalid
         int choice = 0; //users selection
         unsigned int addr = 0;
-        char valueToBeWritten = 0;
+        char value_to_be_written = 0;
         int status;
 
         printf("\nEnter your choice: ");
@@ -218,7 +218,7 @@ int run(){
                     break;
                 }
 
-                handleRead(cache, memory, addr, config->replacementPolicy);
+                handleRead(cache, memory, addr, config->replacement_policy);
                 break;
             
             case 2:
@@ -234,7 +234,7 @@ int run(){
                 }
 
                 printf("Enter value (char): ");
-                status = readValue(" %c", &valueToBeWritten);
+                status = readValue(" %c", &value_to_be_written);
                 if(status < 0){
                     reportEndOfInput();
                     return 0;
@@ -244,7 +244,7 @@ int run(){
                     break;
                 }
 
-                handleWrite(cache, memory, addr, valueToBeWritten);
+                handleWrite(cache, memory, addr, value_to_be_written);
 
                 break;
             

@@ -12,17 +12,17 @@
  * @param config A pointer to the Config Structure
  * 
  * Sets the total memory size, page size, calculates number of pages required. It also allocates memory for
- * the pageTable which is essentially an array of pointers to all these pages. These pointers are
+ * the page_table which is essentially an array of pointers to all these pages. These pointers are
  * initialized to NULL.
  */
 void initializeMemory(Memory *memory, Config *config){
-    memory->totalSize = config->mainMemorySize;
-    memory->pageSize = 256; //fixed page size
-    memory->numPages = (memory->totalSize + memory->pageSize - 1)/memory->pageSize; //round up
+    memory->total_size = config->main_memory_size;
+    memory->page_size = 256; //fixed page size
+    memory->num_pages = (memory->total_size + memory->page_size - 1)/memory->page_size; //round up
 
     //allocate memory for array of page pointers
-    memory->pageTable = (char **)calloc(memory->numPages, sizeof(char *));
-    if(!memory->pageTable){
+    memory->page_table = (char **)calloc(memory->num_pages, sizeof(char *));
+    if(!memory->page_table){
         printf("Error: memoery allocation failed for page table\n");
         exit(1);
     }
@@ -34,7 +34,7 @@ void initializeMemory(Memory *memory, Config *config){
  * @brief Allocates (initializes) a memory page at the specified index.
  *
  * @param memory A pointer to the Memory structure.
- * @param pageIndex The index of the page to allocate.
+ * @param page_index The index of the page to allocate.
  * @return int Returns:
  *              - 1 if the page was successfully allocated or already exists.
  *              - -1 if the memory is uninitialized.
@@ -44,35 +44,35 @@ void initializeMemory(Memory *memory, Config *config){
  * Checks if the page has already been allocated. If not,
  * it dynamically allocates the page and populates it with random non-zero values.
  */
-int allocatePage(Memory *memory, int pageIndex) {
+int allocatePage(Memory *memory, int page_index) {
     //check if memory has been initiliazed
-    if(!memory || !memory->pageTable){
+    if(!memory || !memory->page_table){
         printf("Error: Attempting to write to uninitialized memory\n");
         return -1;
     }
 
     //check if the page index lies within memory's bounds
-    if(pageIndex >= memory->numPages || pageIndex < 0){
+    if(page_index >= memory->num_pages || page_index < 0){
         printf("Error: Attempting to allocate page outside memory's bounds\n");
         return -2;
     }
 
     //check if the page has been initiliazed
-    if (memory->pageTable[pageIndex] == NULL) {
+    if (memory->page_table[page_index] == NULL) {
 
         //allocate memory for the page
-        memory->pageTable[pageIndex] = (char *)malloc(memory->pageSize * sizeof(char));
-        if (!memory->pageTable[pageIndex]) {
+        memory->page_table[page_index] = (char *)malloc(memory->page_size * sizeof(char));
+        if (!memory->page_table[page_index]) {
             printf("Error: Page allocation failed.\n");
             return -3;
         }
 
         // Populate with random non-zero values
-        for (int i = 0; i < memory->pageSize; i++) {
-            memory->pageTable[pageIndex][i] = 32 + (rand() % (126 - 32 + 1));  // ASCII range [32, 126]
+        for (int i = 0; i < memory->page_size; i++) {
+            memory->page_table[page_index][i] = 32 + (rand() % (126 - 32 + 1));  // ASCII range [32, 126]
         }
 
-        printf("Page %d allocated and initialized.\n", pageIndex);
+        printf("Page %d allocated and initialized.\n", page_index);
     }
     return 1;
 }
@@ -87,26 +87,26 @@ int allocatePage(Memory *memory, int pageIndex) {
  * it is dynamically polulated with random values and the value at the given address is returned. 
 */
 int readFromMemory(Memory *memory, int address){
-    if(!memory || !memory->pageTable){
+    if(!memory || !memory->page_table){
         printf("Error: Attempting to write to uninitialized memory\n");
         return -1;
     }
     
-    int pageIdx = address/memory->pageSize; //page index where the address is
-    int offset = address % memory->pageSize; //offset within that page
+    int page_idx = address/memory->page_size; //page index where the address is
+    int offset = address % memory->page_size; //offset within that page
 
-    if(address >= memory->totalSize|| address < 0){
+    if(address >= memory->total_size|| address < 0){
         printf("Invalid Memory address %d\n", address);
         return -1;
     }
 
     //populate page if this is the first time an address from this page has been accessed
-    if (allocatePage(memory, pageIdx) != 1) {
+    if (allocatePage(memory, page_idx) != 1) {
         return -1;
     }
 
     //otherwise return the value at the given address
-    return memory->pageTable[pageIdx][offset];
+    return memory->page_table[page_idx][offset];
 }
 
 /**
@@ -120,26 +120,26 @@ int readFromMemory(Memory *memory, int address){
  * it is loaded with random values and the memory address is then written to with the provided value.
  */
 int writeToMemory(Memory *memory, int address, char value){
-    if(!memory || !memory->pageTable){
+    if(!memory || !memory->page_table){
         printf("Error: Attempting to write to uninitialized memory\n");
         return 0;
     }
 
-    int pageIdx =  address/memory->pageSize;
-    int offset = address % memory->pageSize;
+    int page_idx =  address/memory->page_size;
+    int offset = address % memory->page_size;
     
 
-    if (address >= memory->totalSize || address < 0) {
+    if (address >= memory->total_size || address < 0) {
         printf("Error: Invalid memory address %d.\n", address);
         return 0;
     }
     //bring the page into existence the same way a read does. Allocating it here
     //without populating it would leave every other byte on the page holding
     //whatever malloc returned, which nothing in the program ever decided.
-    if (allocatePage(memory, pageIdx) != 1) {
+    if (allocatePage(memory, page_idx) != 1) {
         return 0;
     }
-    memory->pageTable[pageIdx][offset] = value;
+    memory->page_table[page_idx][offset] = value;
     printf("Memory at address %d changed to %d\n", address, value);
     return 1;
 }
@@ -151,22 +151,22 @@ int writeToMemory(Memory *memory, int address, char value){
  * 
  * @param memory A pointer to the Memory structure
  * @param addr The address that triggered the fetching of the data block
- * @returns blockData: An array of exactly BLOCK_SIZE raw bytes. It is NOT
+ * @returns block_data: An array of exactly BLOCK_SIZE raw bytes. It is NOT
  *          NUL-terminated - every byte is data, so callers must use
  *          BLOCK_SIZE rather than string functions.
  * 
  * Figure out the starting address of the block from the given address and fetch 32 bytes of data
  * from the computed address. In case the page hasn't been allocated yet, initialize it first.
  */
-int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** blockData) {
-    if(addr >= memory->totalSize){
+int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** block_data) {
+    if(addr >= memory->total_size){
         fprintf(stderr, "Invalid Memory address %u\n", addr);
         return -1;
     }
 
-    int blockStartAddr = addr & ~BLOCK_MASK;  // Align to block start
-    *blockData = malloc(BLOCK_SIZE * sizeof(char));
-    if (!*blockData) {
+    int block_start_addr = addr & ~BLOCK_MASK;  // Align to block start
+    *block_data = malloc(BLOCK_SIZE * sizeof(char));
+    if (!*block_data) {
         fprintf(stderr, "Memory allocation failed\n");
         return -3; // Erroneous fetch attempt: malloc failed
     }
@@ -175,7 +175,7 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** blockData) {
     //offsets 0..BLOCK_SIZE-1 are all addressable, so reserving the last byte
     //for a '\0' would silently destroy the byte the caller asked for.
     for (int i = 0; i < BLOCK_SIZE; i++) {
-        (*blockData)[i] = readFromMemory(memory, blockStartAddr + i);
+        (*block_data)[i] = readFromMemory(memory, block_start_addr + i);
     }
     return 0; // for success
 }
@@ -190,18 +190,18 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, char** blockData) {
  */
 void freeMemory(Memory *memory){
 
-    if (!memory || !memory->pageTable) {
+    if (!memory || !memory->page_table) {
         printf("Memory already freed or not initialized.\n");
         return;
     }
 
-    for (int i = 0; i < memory->numPages; i++) {
-        if (memory->pageTable[i] != NULL) {
-            free(memory->pageTable[i]);  //free eacch allocated page
+    for (int i = 0; i < memory->num_pages; i++) {
+        if (memory->page_table[i] != NULL) {
+            free(memory->page_table[i]);  //free eacch allocated page
         }
     }
-    free(memory->pageTable);  //free the page table
-    memory->pageTable = NULL;
+    free(memory->page_table);  //free the page table
+    memory->page_table = NULL;
 
 }
 

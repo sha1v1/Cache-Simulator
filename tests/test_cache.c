@@ -24,58 +24,58 @@ void tearDown(void) {
 
 void test_initialize_cache(void) {
     TEST_ASSERT_NOT_NULL(cache);
-    TEST_ASSERT_EQUAL(4, cache->numSets);
-    TEST_ASSERT_EQUAL(2, cache->linesPerSet);  // Two lines per set
-    TEST_ASSERT_NOT_NULL(cache->cacheSets);
+    TEST_ASSERT_EQUAL(4, cache->num_sets);
+    TEST_ASSERT_EQUAL(2, cache->lines_per_set);  // Two lines per set
+    TEST_ASSERT_NOT_NULL(cache->cache_sets);
 
-    char zeroBlock[BLOCK_SIZE];
-    memset(zeroBlock, 0, BLOCK_SIZE);
+    char zero_block[BLOCK_SIZE];
+    memset(zero_block, 0, BLOCK_SIZE);
 
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 2; j++) {
-            Line line = cache->cacheSets[i].cacheLines[j];
-            TEST_ASSERT_FALSE(line.validBit);
+            Line line = cache->cache_sets[i].cache_lines[j];
+            TEST_ASSERT_FALSE(line.valid_bit);
             TEST_ASSERT_EQUAL(0, line.tag);
-            TEST_ASSERT_EQUAL_MEMORY(zeroBlock, line.block, BLOCK_SIZE);
+            TEST_ASSERT_EQUAL_MEMORY(zero_block, line.block, BLOCK_SIZE);
         }
     }
 }
 
 void test_cacheAccess(void) {
     unsigned int address = 0x1234;
-    char outData;
+    char out_data;
 
     // Check miss
-    int result = checkCache(cache, address, &outData);
+    int result = checkCache(cache, address, &out_data);
     TEST_ASSERT_EQUAL(0, result);
 
     // Simulate fetching data and updating cache
-    char blockData[BLOCK_SIZE];
-    makeBlock(blockData, "BlockData");
-    updateCache(&cache->cacheSets[getSetIndex(address, 4)].cacheLines[0],
+    char block_data[BLOCK_SIZE];
+    makeBlock(block_data, "BlockData");
+    updateCache(&cache->cache_sets[getSetIndex(address, 4)].cache_lines[0],
                 getTagBits(address, 4),
-                blockData);
+                block_data);
 
     // Check hit
-    result = checkCache(cache, address, &outData);
+    result = checkCache(cache, address, &out_data);
     TEST_ASSERT_EQUAL(1, result);
 
 }
 
 
 void test_update_cache(void) {
-    int setIndex = 1;
-    int lineIndex = 0;
-    int tagBits = 6;
-    char blockData[BLOCK_SIZE];
-    makeBlock(blockData, "NewData");
+    int set_index = 1;
+    int line_index = 0;
+    int tag_bits = 6;
+    char block_data[BLOCK_SIZE];
+    makeBlock(block_data, "NewData");
 
-    Line *line = &cache->cacheSets[setIndex].cacheLines[lineIndex];
-    updateCache(line, tagBits, blockData);
+    Line *line = &cache->cache_sets[set_index].cache_lines[line_index];
+    updateCache(line, tag_bits, block_data);
 
-    TEST_ASSERT_TRUE(line->validBit);
-    TEST_ASSERT_EQUAL(tagBits, line->tag);
-    TEST_ASSERT_EQUAL_MEMORY(blockData, line->block, BLOCK_SIZE);
+    TEST_ASSERT_TRUE(line->valid_bit);
+    TEST_ASSERT_EQUAL(tag_bits, line->tag);
+    TEST_ASSERT_EQUAL_MEMORY(block_data, line->block, BLOCK_SIZE);
 }
 
 void test_RandomReplacement(void){
@@ -96,13 +96,13 @@ void test_RandomReplacement(void){
     updateCache(handleLineReplacement(cache, address2, "RANDOM"), getTagBits(address2, 4), block2);
 
     // Access a new address to trigger replacement
-    Line *replacedLine = handleLineReplacement(cache, address3, "RANDOM");
-    updateCache(replacedLine, getTagBits(address3, 4), block3);
+    Line *replaced_line = handleLineReplacement(cache, address3, "RANDOM");
+    updateCache(replaced_line, getTagBits(address3, 4), block3);
 
     // Verify Random replacement
     // Ensure that the tag of the replaced line matches one of the first two tags
     unsigned int tag = getTagBits(address3, 4);
-    TEST_ASSERT_TRUE(cache->cacheSets[1].cacheLines[0].tag == tag || cache->cacheSets[1].cacheLines[1].tag == tag);
+    TEST_ASSERT_TRUE(cache->cache_sets[1].cache_lines[0].tag == tag || cache->cache_sets[1].cache_lines[1].tag == tag);
 
 
 }
@@ -131,22 +131,22 @@ void test_LRUReplacement(void) {
     // Access a new address to trigger replacement
     checkCache(cache, address3, NULL);
 
-    Line *replacedLine = handleLineReplacement(cache, address3, "LRU");
-    updateCache(replacedLine, getTagBits(address3, 4), block3);
+    Line *replaced_line = handleLineReplacement(cache, address3, "LRU");
+    updateCache(replaced_line, getTagBits(address3, 4), block3);
     
     // Verify LRU replacement, line 0 should be replaced
     unsigned int tag = getTagBits(address3, 4);
-    TEST_ASSERT_EQUAL(tag, cache->cacheSets[1].cacheLines[0].tag); // Line 0 should be replaced
+    TEST_ASSERT_EQUAL(tag, cache->cache_sets[1].cache_lines[0].tag); // Line 0 should be replaced
     
 }
 
 
 
 void test_invalid_cache_access(void) {
-    Cache *invalidCache = NULL;
+    Cache *invalid_cache = NULL;
     unsigned int addr = 50;
 
-    int result = checkCache(invalidCache, addr, NULL);
+    int result = checkCache(invalid_cache, addr, NULL);
     TEST_ASSERT_EQUAL(-1, result);  // Expect cache access to fail gracefully
 }
 

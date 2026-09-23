@@ -8,7 +8,7 @@ Memory memory;
 Config config;
 
 void setUp(void){
-    config.mainMemorySize = 1024;
+    config.main_memory_size = 1024;
     initializeMemory(&memory, &config);
 }
 
@@ -17,10 +17,10 @@ void tearDown(void){
 }
 
 void test_initialize_memory(){
-    TEST_ASSERT_NOT_NULL(memory.pageTable);
-    TEST_ASSERT_EQUAL(4, memory.numPages);
-    TEST_ASSERT_EQUAL(256, memory.pageSize);
-    TEST_ASSERT_EQUAL(1024, memory.totalSize);
+    TEST_ASSERT_NOT_NULL(memory.page_table);
+    TEST_ASSERT_EQUAL(4, memory.num_pages);
+    TEST_ASSERT_EQUAL(256, memory.page_size);
+    TEST_ASSERT_EQUAL(1024, memory.total_size);
 
 
 }
@@ -47,11 +47,11 @@ void test_write_then_read_untouched_neighbour(void){
 }
 
 void test_out_of_bounds_access(void) {
-    char readValue = readFromMemory(&memory, 2000);  // Out of bounds
-    TEST_ASSERT_EQUAL(-1, readValue);               // Should return -1
+    char read_value = readFromMemory(&memory, 2000);  // Out of bounds
+    TEST_ASSERT_EQUAL(-1, read_value);               // Should return -1
 
-    int writeSuccess = writeToMemory(&memory, 2000, 42);
-    TEST_ASSERT_EQUAL(0, writeSuccess);             // Should fail
+    int write_success = writeToMemory(&memory, 2000, 42);
+    TEST_ASSERT_EQUAL(0, write_success);             // Should fail
 }
 //check for
 // 1. failed to initialize memory
@@ -60,14 +60,14 @@ void test_out_of_bounds_access(void) {
 // 4. write to memory to an out of bounds address or uninitialized memory
 
 void test_uninitialized_memory(void){
-    //this is zero initialialization. This ensures pageTable = NULL
+    //this is zero initialialization. This ensures page_table = NULL
     //and other fields are zero.
-    //leaving "invalidMemory" in an uninitialized state might cause pageTable to point to garbalge values.
-    Memory invalidMemory = {0};
-    int val = readFromMemory(&invalidMemory, 101);
+    //leaving "invalid_memory" in an uninitialized state might cause page_table to point to garbalge values.
+    Memory invalid_memory = {0};
+    int val = readFromMemory(&invalid_memory, 101);
     TEST_ASSERT_EQUAL(-1, val);
 
-    TEST_ASSERT_EQUAL(writeToMemory(&invalidMemory, 100, 10), 0);
+    TEST_ASSERT_EQUAL(writeToMemory(&invalid_memory, 100, 10), 0);
 }
 
 void test_allocate_invalid_page_index(void){
@@ -76,15 +76,15 @@ void test_allocate_invalid_page_index(void){
 }
 
 void test_allocate_page_invalid_memory(void){
-    Memory invalidMemory = {0};
-    int ret = allocatePage(&invalidMemory, 1);
+    Memory invalid_memory = {0};
+    int ret = allocatePage(&invalid_memory, 1);
     TEST_ASSERT_EQUAL(-1, ret);
 }
 
 void test_read_from_memory_uninitialized(void){
-    Memory invalidMemory = {0};
+    Memory invalid_memory = {0};
     int ret1 = readFromMemory(NULL, 2);
-    int ret2 = readFromMemory(&invalidMemory, 2);
+    int ret2 = readFromMemory(&invalid_memory, 2);
     TEST_ASSERT_EQUAL(-1, ret1);
     TEST_ASSERT_EQUAL(-1, ret2);
 }
@@ -104,9 +104,9 @@ void test_write_to_memory_invalid_address(void){
 }
 
 void test_write_to_memory_uninitialized(void){
-    Memory invalidMemory = {0};
+    Memory invalid_memory = {0};
     int ret1 = writeToMemory(NULL, 2, 'a');
-    int ret2 = writeToMemory(&invalidMemory, 2, 'a');
+    int ret2 = writeToMemory(&invalid_memory, 2, 'a');
     TEST_ASSERT_EQUAL(0, ret1);
     TEST_ASSERT_EQUAL(0, ret2);
 }
