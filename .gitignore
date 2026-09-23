@@ -50,3 +50,14 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Build output (everything the Makefile produces lands here)
+build/
+
+# Stray binaries from ad-hoc compiles
+cache_program
+test_cache
+test_memory
+
+# macOS
+.DS_Store

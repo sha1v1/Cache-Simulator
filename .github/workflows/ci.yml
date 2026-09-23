@@ -34,8 +34,8 @@ jobs:
 
       - name: Compile and Run Memory Tests
         run: |
-          gcc -o test_memory tests/test_memory.c src/memory.c src/unity/unity.c
-          ./test_memory
+          make build/test_memory
+          ./build/test_memory
 
   cache-test:
     needs: build
@@ -49,5 +49,5 @@ jobs:
 
       - name: Compile and Run Cache Tests
         run: |
-          gcc -o test_cache tests/test_cache.c src/cache.c src/unity/unity.c -Iinclude -lm
-          ./test_cache
+          make build/test_cache
+          ./build/test_cache
