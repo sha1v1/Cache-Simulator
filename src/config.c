@@ -66,19 +66,6 @@ if (getcwd(cwd, sizeof(cwd)) != NULL) {
             }
             printf("Read the replacement policy\n");
         }
-        else if(strcmp(key,"write_policy") == 0){
-            if(strcmp(value, "WRITE_THROUGH") == 0){
-                config->write_policy = WRITE_THROUGH;
-            }
-            else if(strcmp(value, "WRITE_BACK") == 0){
-                config->write_policy = WRITE_BACK;
-            }
-            else{
-                printf("Error: unknown write_policy '%s' (expected WRITE_THROUGH or WRITE_BACK)\n", value);
-                exit(1);
-            }
-            printf("read write policy\n");
-        }
         else{
             printf("Unknown key: %s\n", key);
             exit(1);

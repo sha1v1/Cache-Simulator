@@ -109,9 +109,9 @@ void test_RandomReplacement(void){
 
 
 void test_LRUReplacement(void) {
-    unsigned int address1 = 0x1234; // Maps to set 0, line 0
-    unsigned int address2 = 0x00a4; // Maps to set 0, line 1
-    unsigned int address3 = 0x0234; // Maps to set 0, should replace line 0 (LRU)
+    unsigned int address1 = 0x1234; // Maps to set 1, line 0
+    unsigned int address2 = 0x00a4; // Maps to set 1, line 1
+    unsigned int address3 = 0x0234; // Maps to set 1, should replace line 0 (LRU)
 
     uint8_t block1[BLOCK_SIZE], block2[BLOCK_SIZE], block3[BLOCK_SIZE];
     makeBlock(block1, "Block1");

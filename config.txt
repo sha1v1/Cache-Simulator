@@ -2,4 +2,3 @@ num_sets=4
 main_memory_size=1024
 lines_per_set=2
 replacement_policy=RANDOM
-write_policy=WRITE_THROUGH

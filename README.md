@@ -65,11 +65,15 @@ Set | Line | Valid | Tag     | Block Data
 
 ### Configuration
 The program reads configuration settings from `config.text`, defining cache and memory behaviour. The parameters are listed below:
-- `num_sets`: Number of sets in the cache.
-- `main_memory_size`: Size of main memory in bytes.
-- `lines_per_set`: Number of lines in each set in the cache.
+- `num_sets`: Number of sets in the cache. Must be a power of two, because the
+  set index is masked out of the address rather than computed with a modulo.
+- `main_memory_size`: Size of main memory in bytes. Must be a positive multiple
+  of the 32-byte block size, so the last block does not run past the end of memory.
+- `lines_per_set`: Number of lines in each set in the cache. Any positive value;
+  associativity is not encoded in the address, so it need not be a power of two.
 - `replacement_policy`: Defines the policy to replace line in case of conflicts.
     - `LRU`: replace the least recently used line.
     - `RANDOM`: replace a randomly chosen line.
-- `write_policy`: Defines how data is written to the main memory once its written to the cache.
-    - `WRITE_THROUGH`: data is written both to the cache and main memory immediately. 
+
+Writes are write-through with no-write-allocate: a write always reaches main
+memory, and updates the cache only when the address is already resident. 
