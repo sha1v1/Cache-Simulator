@@ -37,6 +37,15 @@ void test_write_to_memory(void){
 
 }
 
+//Writing one byte has to bring the whole page into existence populated, the
+//same as a read does. Otherwise the other 255 bytes on that page hold whatever
+//malloc returned, and nothing in the program ever decided their values.
+void test_write_then_read_untouched_neighbour(void){
+    writeToMemory(&memory, 500, 42);            //first touch of page 1
+    int value = readFromMemory(&memory, 501);   //a byte nobody ever wrote
+    TEST_ASSERT(value >= 32 && value <= 126);
+}
+
 void test_out_of_bounds_access(void) {
     char readValue = readFromMemory(&memory, 2000);  // Out of bounds
     TEST_ASSERT_EQUAL(-1, readValue);               // Should return -1
@@ -108,6 +117,7 @@ int main(void) {
     RUN_TEST(test_initialize_memory);
     RUN_TEST(test_read_from_memory);
     RUN_TEST(test_write_to_memory);
+    RUN_TEST(test_write_then_read_untouched_neighbour);
     RUN_TEST(test_out_of_bounds_access);
     RUN_TEST(test_uninitialized_memory);
     RUN_TEST(test_allocate_invalid_page_index);

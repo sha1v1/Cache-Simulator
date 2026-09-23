@@ -101,7 +101,9 @@ int readFromMemory(Memory *memory, int address){
     }
 
     //populate page if this is the first time an address from this page has been accessed
-    allocatePage(memory, pageIdx);
+    if (allocatePage(memory, pageIdx) != 1) {
+        return -1;
+    }
 
     //otherwise return the value at the given address
     return memory->pageTable[pageIdx][offset];
@@ -131,13 +133,11 @@ int writeToMemory(Memory *memory, int address, char value){
         printf("Error: Invalid memory address %d.\n", address);
         return 0;
     }
-    //incase the page we're writing to hadn't been initialized
-    if (memory->pageTable[pageIdx] == NULL){
-        memory->pageTable[pageIdx] = (char *)malloc(memory->pageSize * sizeof(char));
-        if (!memory->pageTable[pageIdx]) {
-            printf("Error: Page allocation failed.\n");
-            exit(1);
-        }
+    //bring the page into existence the same way a read does. Allocating it here
+    //without populating it would leave every other byte on the page holding
+    //whatever malloc returned, which nothing in the program ever decided.
+    if (allocatePage(memory, pageIdx) != 1) {
+        return 0;
     }
     memory->pageTable[pageIdx][offset] = value;
     printf("Memory at address %d changed to %d\n", address, value);
