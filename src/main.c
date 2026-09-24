@@ -266,9 +266,8 @@ int run(){
         }
     }
 
-    freeCache(cache);
-    freeMemory(memory);
-    free(config);
+    //unreachable: every exit from the loop above returns directly. The teardown
+    //lives in main(), which is what called init() to allocate these.
     return 0;
 }
 
@@ -278,5 +277,12 @@ int main(){
     init();
 
     run();
+
+    //init() allocated these, so main() releases them. run() cannot: each of its
+    //exits is a return from inside the menu loop.
+    freeCache(cache);    //frees the lines, the sets array, and the Cache struct
+    freeMemory(memory);  //frees the pages and the page table, but not the struct
+    free(memory);        //...which is heap allocated here, so it is freed too
+    free(config);
     return 0;
 }
