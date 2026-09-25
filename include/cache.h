@@ -25,7 +25,7 @@ typedef struct {
 
 
 Cache* initalizeCache(Config *config);
-void initializeSets(Set* sets, int num_sets, int lines_per_set);
+int initializeSets(Set* sets, int num_sets, int lines_per_set);
 int getSetIndex(unsigned int addr, int num_sets);
 int getBlockOffset(unsigned int addr);
 int getTagBits(unsigned int addr, int num_sets);
@@ -34,7 +34,6 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy p
 Line *randomReplacement(Set *set);
 Line* leastRecentlyUsed(Set *set);
 void updateCache(Line *line, int tag_bits, const uint8_t *block_data);
-void displayCache(Cache *c);
 void freeCache(Cache *cache);
 
 #endif

@@ -21,7 +21,8 @@ typedef struct {
     int num_pages;      // Total number of pages
 } Memory;
 
-void initializeMemory(Memory *memory, Config *config);
+//Returns 0 on success, or -1 if the size is unusable or allocation failed.
+int initializeMemory(Memory *memory, Config *config);
 int allocatePage(Memory *memory, int page_index);
 int readFromMemory(Memory *memory, int address);
 int writeToMemory(Memory *memory, int address, uint8_t value);

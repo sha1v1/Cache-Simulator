@@ -8,7 +8,8 @@ UNITYDIR = $(SRCDIR)/unity
 BUILDDIR = build
 
 # Everything except main.c: shared by the simulator and both test binaries.
-LIBSRCS = $(SRCDIR)/cache.c $(SRCDIR)/config.c $(SRCDIR)/memory.c
+LIBSRCS = $(SRCDIR)/cache.c $(SRCDIR)/commands.c $(SRCDIR)/config.c \
+          $(SRCDIR)/log.c $(SRCDIR)/memory.c $(SRCDIR)/report.c $(SRCDIR)/sim.c
 LIBOBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(LIBSRCS))
 
 SRCS = $(SRCDIR)/main.c $(LIBSRCS)
