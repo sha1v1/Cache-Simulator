@@ -51,3 +51,18 @@ jobs:
         run: |
           make build/test_cache
           ./build/test_cache
+
+  sim-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+
+      - name: Compile and Run Simulator Tests
+        run: |
+          make build/test_sim
+          ./build/test_sim

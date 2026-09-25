@@ -17,7 +17,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 TARGET    = $(BUILDDIR)/cache_sim
 UNITYOBJ  = $(BUILDDIR)/unity.o
-TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_memory
+TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_memory $(BUILDDIR)/test_sim
 
 all: $(TARGET)
 
@@ -42,6 +42,7 @@ tests: $(TESTBINS)
 test: $(TESTBINS)
 	$(BUILDDIR)/test_cache
 	$(BUILDDIR)/test_memory
+	$(BUILDDIR)/test_sim
 
 clean:
 	rm -rf $(BUILDDIR)
