@@ -13,25 +13,29 @@ unsigned int global_time = 0;
  * @param sets An array of Sets
  * @param num_sets number of Sets in the Cache
  * @param lines_per_set number of lines in a single Set
+ * @return int Returns 0 on success, or -1 if a set's lines could not be
+ *         allocated. Sets already built are left for the caller to free.
  *
  * Iterate over all Sets, initalize the valid bit, tag bits, data block and
  * the last access times for all lines within the same.
  */
-void initializeSets(Set *sets, int num_sets, int lines_per_set)
+int initializeSets(Set *sets, int num_sets, int lines_per_set)
 {
+    //every set starts empty, so a caller unwinding a partial failure can free
+    //the whole array without reading an uninitialized pointer
+    for (int i = 0; i < num_sets; i++)
+    {
+        sets[i].cache_lines = NULL;
+        sets[i].lines_per_set = lines_per_set;
+    }
 
     // outer loop initializes each set
     for (int i = 0; i < num_sets; i++)
     {
-        sets[i].lines_per_set = lines_per_set;
-        // if (sets[i].cache_lines) {
-        //     free(sets[i].cache_lines);
-        // }
         sets[i].cache_lines = (Line *)malloc(lines_per_set * sizeof(Line));
         if (!sets[i].cache_lines)
         {
-            printf("Failed to allocate memory for lines in set %d\n", i);
-            exit(1);
+            return -1;
         }
 
         // now initialize each line within a set
@@ -44,7 +48,7 @@ void initializeSets(Set *sets, int num_sets, int lines_per_set)
         }
     }
 
-    printf("All sets in Cache initialized\n");
+    return 0;
 }
 
 /*
@@ -61,36 +65,26 @@ void initializeSets(Set *sets, int num_sets, int lines_per_set)
  */
 Cache *initalizeCache(Config *config)
 {
-    if (!config)
-    {
-        printf("Error: Configurations have not been set.\n");
-        return NULL;
-    }
-
-    //getSetIndex masks address bits, which only computes blockNumber % num_sets
-    //when num_sets is a power of two. Any other value leaves an address bit in
-    //neither the set index nor the tag, so two different blocks end up sharing a
-    //(set, tag) label and alias onto each other's data.
+    //simInit validates the configuration and can name the setting at fault.
+    //This guard only refuses an unusable one, so that a caller reaching straight
+    //for the cache still cannot build a shape the address decoding cannot
+    //describe: getSetIndex masks address bits, which only computes
+    //blockNumber % num_sets when num_sets is a power of two. Any other value
+    //leaves an address bit in neither the set index nor the tag, so two
+    //different blocks share a (set, tag) label and alias onto each other's data.
     //n & (n-1) clears the lowest set bit: zero means only one bit was set.
-    if (config->num_sets <= 0 || (config->num_sets & (config->num_sets - 1)) != 0)
+    if (!config
+        || config->num_sets <= 0
+        || (config->num_sets & (config->num_sets - 1)) != 0
+        || config->lines_per_set <= 0)
     {
-        printf("Error: num_sets must be a positive power of two (got %d)\n",
-               config->num_sets);
-        exit(1);
-    }
-
-    if (config->lines_per_set <= 0)
-    {
-        printf("Error: lines_per_set must be positive (got %d)\n",
-               config->lines_per_set);
-        exit(1);
+        return NULL;
     }
 
     Cache *cache = (Cache *)malloc(sizeof(Cache));
     if (!cache)
     {
-        printf("Failed to allocate memory for Cache\n");
-        exit(1);
+        return NULL;
     }
     cache->num_sets = config->num_sets;
     cache->lines_per_set = config->lines_per_set;
@@ -98,15 +92,20 @@ Cache *initalizeCache(Config *config)
     Set *sets = (Set *)malloc(cache->num_sets * sizeof(Set));
     if (!sets)
     {
-        printf("Failed to allocate memory for sets\n");
-        exit(1);
+        free(cache);
+        return NULL;
     }
 
     cache->cache_sets = sets;
 
     // initialize all sets
-    initializeSets(cache->cache_sets, cache->num_sets, cache->lines_per_set);
-    printf("Cache initialized.\n");
+    if (initializeSets(cache->cache_sets, cache->num_sets, cache->lines_per_set) != 0)
+    {
+        //freeCache walks every set, and initializeSets NULLed the ones it never
+        //reached, so the partial cache is released the same way a whole one is
+        freeCache(cache);
+        return NULL;
+    }
     return cache;
 }
 
@@ -196,7 +195,6 @@ int getTagBits(unsigned int addr, int num_sets)
  */
 int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data){
     if(!cache || !cache->cache_sets){
-        printf("Error: cache is not initialized\n");
         return -1;
     }
 
@@ -211,7 +209,9 @@ int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data){
     for (int i = 0; i < cur_set->lines_per_set; i++) {
         Line *line = &cur_set->cache_lines[i];
 
-        if (cur_set->cache_lines[i].valid_bit && cur_set->cache_lines[i].tag == tag_bits) {
+        //tag is unsigned while getTagBits returns int; cast so the comparison
+        //is not done in unsigned arithmetic behind the reader's back
+        if (cur_set->cache_lines[i].valid_bit && cur_set->cache_lines[i].tag == (unsigned int)tag_bits) {
             // Cache hit: Retrieve the data at the block offset
             if (out_data) {
                 *out_data = line->block[block_offset];
@@ -244,7 +244,8 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy p
     // Find an empty line: nothing has to be evicted to make room
     for (int i = 0; i < cur_set->lines_per_set; i++) {
         if (!(cur_set->cache_lines[i].valid_bit)) {
-            printf("Set %d: loading into empty line %d\n", set_index, i);
+            //the caller can tell this was an empty line rather than an eviction
+            //by the line's valid bit, which is still false until it is filled
             return &(cur_set->cache_lines[i]);
         }
     }
@@ -256,7 +257,6 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy p
         case POLICY_RANDOM: return randomReplacement(cur_set);
     }
 
-    printf("Error: Unknown replacement policy %d\n", (int)policy);
     return NULL;
 }
 
@@ -343,50 +343,4 @@ void freeCache(Cache *cache)
 
     free(cache->cache_sets);
     free(cache);
-}
-
-/**
- * @brief Displays the current state of the Cache.
- *
- * @param cache A pointer to the Cache structure to display.
- *
- * Prints the contents of all sets and lines in the Cache in a formatted table,
- * including set indices, line indices, valid bits, tag bits, and block data.
- */
-void displayCache(Cache *cache)
-{
-    if (!cache || !cache->cache_sets)
-    {
-        printf("Error: Cache is not initialized.\n");
-        return;
-    }
-
-    int num_sets = cache->num_sets;
-    int lines_per_set = cache->lines_per_set;
-
-    printf("\n\n*****CACHE STATE*****\n");
-    printf("Set | Line | Valid | Tag     | Block Data\n");
-    printf("-----------------------------------------\n");
-
-    for (int i = 0; i < num_sets; i++)
-    {
-        Set *set = &cache->cache_sets[i];
-        for (int j = 0; j < lines_per_set; j++)
-        {
-            Line *line = &set->cache_lines[j];
-            printf("%3d | %4d | %5d | %7u | ",
-                   i, j, line->valid_bit, line->tag);
-
-            //the block holds arbitrary bytes and has no terminator, so %s would
-            //read past the array. Print printable ASCII as-is and stand in a
-            //'.' for the rest, the way hexdump does.
-            for (size_t k = 0; k < sizeof(line->block); k++)
-            {
-                uint8_t byte = line->block[k];
-                putchar((byte >= 32 && byte <= 126) ? byte : '.');
-            }
-            putchar('\n');
-        }
-    }
-    printf("-----------------------------------------\n");
 }
