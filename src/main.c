@@ -111,9 +111,15 @@ int handleRead(Cache *cache, Memory *memory, unsigned int addr, ReplacementPolic
 void handleWrite(Cache *cache, Memory *memory, unsigned int addr, uint8_t value) {
     int hit = checkCache(cache, addr, NULL);  //check if address exists in cache
 
-    //write-through with no-write-allocate: memory is always updated below, and
-    //the cache is touched only when the address is already resident. A miss does
-    //not pull the block in.
+    //write-through: every write reaches main memory, and it goes first so that an
+    //address main memory rejects cannot leave a cache line holding a byte that
+    //was never stored. Updating the line first would let the two disagree.
+    if (writeToMemory(memory, addr, value) != 1) {
+        return;
+    }
+
+    //no-write-allocate: the cache is touched only when the address is already
+    //resident. A miss does not pull the block in.
     if (hit == 1) {
         printf("Cache hit! Writing '%c' to cache at address 0x%X\n", value, addr);
 
@@ -133,11 +139,8 @@ void handleWrite(Cache *cache, Memory *memory, unsigned int addr, uint8_t value)
             }
         }
     } else {
-        printf("cache miss, writing directly to memory at 0x%X\n", addr);
+        printf("cache miss, wrote directly to memory at 0x%X\n", addr);
     }
-
-    //write-through: every write reaches main memory
-    writeToMemory(memory, addr, value);
 }
 
 
