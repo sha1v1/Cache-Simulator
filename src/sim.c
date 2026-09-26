@@ -74,7 +74,7 @@ SimStatus simInit(Simulator *sim, const Config *config){
         return SIM_ERR_OUT_OF_MEMORY;   //the sizes are already known to be sound
     }
 
-    sim->cache = initalizeCache(&sim->config);
+    sim->cache = initializeCache(&sim->config);
     if(!sim->cache){
         //memory is already up, so tear it down rather than leaking it on the
         //way out of a failed startup
@@ -99,7 +99,7 @@ void simFree(Simulator *sim){
 }
 
 SimStatus simReset(Simulator *sim){
-    Cache *fresh = initalizeCache(&sim->config);
+    Cache *fresh = initializeCache(&sim->config);
     if(!fresh){
         //the old cache is still intact, so the simulator stays usable
         return SIM_ERR_OUT_OF_MEMORY;
@@ -144,7 +144,8 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
     //look in cache. The byte comes back through a uint8_t out-parameter and is
     //reported as an int, so a legitimate 0xFF can never look like an error code.
     uint8_t cached_byte = 0;
-    int hit = checkCache(sim->cache, addr, &cached_byte);
+    int hit_way = -1;
+    int hit = checkCache(sim->cache, addr, &cached_byte, &hit_way);
 
     int set_index = getSetIndex(addr, sim->cache->num_sets);
 
@@ -158,6 +159,9 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
             info->result = ACCESS_HIT;
             info->value = cached_byte;
             info->set_index = set_index;
+            //a hit touches a line too - it is the one that answered, and its LRU
+            //timestamp just moved - so line_index names it rather than staying -1
+            info->line_index = hit_way;
         }
         return SIM_OK;   //successful cache access, didn't have to look into memory
     }
@@ -223,7 +227,8 @@ SimStatus simWrite(Simulator *sim, unsigned int addr, uint8_t value, AccessInfo 
         return status;
     }
 
-    int hit = checkCache(sim->cache, addr, NULL);   //is the address already resident?
+    int hit_way = -1;
+    int hit = checkCache(sim->cache, addr, NULL, &hit_way);   //already resident?
     bool new_page = (sim->memory.page_table[page_index] == NULL);
 
     //write-through: every write reaches main memory. Memory goes first so a
@@ -240,19 +245,12 @@ SimStatus simWrite(Simulator *sim, unsigned int addr, uint8_t value, AccessInfo 
     //no-write-allocate: the cache is touched only when the address is already
     //resident. A miss does not pull the block in.
     if(hit == 1){
-        int tag_bits = getTagBits(addr, sim->cache->num_sets);
-        int block_offset = getBlockOffset(addr);
-        Set *cur_set = &sim->cache->cache_sets[set_index];
-
-        for(int i = 0; i < cur_set->lines_per_set; i++){
-            Line *line = &cur_set->cache_lines[i];
-            if(line->valid_bit && line->tag == (unsigned int)tag_bits){
-                line->block[block_offset] = value;
-                line->last_access_time = global_time++;
-                line_index = i;
-                break;
-            }
-        }
+        //checkCache located the line and said which way held it, so the byte goes
+        //straight there instead of searching the set for the same tag a second time
+        Line *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
+        line->block[getBlockOffset(addr)] = value;
+        line->last_access_time = global_time++;
+        line_index = hit_way;
     }
 
     sim->stats.writes++;

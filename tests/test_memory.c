@@ -115,7 +115,7 @@ void test_write_to_memory_uninitialized(void){
 //it, and must not report success while filling the block with error codes.
 void test_fetch_block_uninitialized_memory(void){
     Memory invalid_memory = {0};
-    char *block = NULL;
+    uint8_t *block = NULL;
 
     TEST_ASSERT_EQUAL(-1, fetchBlockFromMemory(NULL, 0, &block));
     TEST_ASSERT_EQUAL(-1, fetchBlockFromMemory(&invalid_memory, 0, &block));

@@ -8,15 +8,15 @@
 unsigned int global_time = 0;
 
 /**
- * @brief Initialize all sets within the Cache.
+ * @brief Initialize all sets within the cache.
  *
  * @param sets An array of Sets
- * @param num_sets number of Sets in the Cache
- * @param lines_per_set number of lines in a single Set
+ * @param num_sets number of sets in the cache
+ * @param lines_per_set number of lines in a single set
  * @return int Returns 0 on success, or -1 if a set's lines could not be
  *         allocated. Sets already built are left for the caller to free.
  *
- * Iterate over all Sets, initalize the valid bit, tag bits, data block and
+ * Iterate over all sets, initalize the valid bit, tag bits, data block and
  * the last access times for all lines within the same.
  */
 int initializeSets(Set *sets, int num_sets, int lines_per_set)
@@ -61,9 +61,9 @@ int initializeSets(Set *sets, int num_sets, int lines_per_set)
  * @param config a pointer to the Config structure
  * @returns cache: a pointer to the initialized Cache structure
  *
- * Initialize the num_sets and lines_per_set fields and then inialize all Sets by calling inializetSets().
+ * Initialize the num_sets and lines_per_set fields and then inialize all Sets by calling initializeSets().
  */
-Cache *initalizeCache(Config *config)
+Cache *initializeCache(Config *config)
 {
     //simInit validates the configuration and can name the setting at fault.
     //This guard only refuses an unusable one, so that a caller reaching straight
@@ -113,7 +113,7 @@ Cache *initalizeCache(Config *config)
  * @brief Given an address and number of sets, find the index of the set which the address maps to.
  *
  * @param addr The address for which the set index is to be calculated.
- * @param num_sets The number os Sets in the Cache
+ * @param num_sets The number of sets in the cache
  */
 int getSetIndex(unsigned int addr, int num_sets)
 {
@@ -136,13 +136,13 @@ int getBlockOffset(unsigned int addr)
 /**
  * @brief Number of address bits needed to index num_sets sets.
  *
- * @param num_sets number of Sets in the Cache; must be a power of two
+ * @param num_sets number of sets in the cache; must be a power of two
  *
  * Integer equivalent of log2(). Counting the shifts keeps this exact, where a
  * floating point log2() would have to be truncated back to an int and any
  * platform returning 2.9999.. for log2(8) would silently size the field wrong.
  */
-static int setIndexBits(int num_sets)
+int setIndexBits(int num_sets)
 {
     int bits = 0;
     while (num_sets > 1)
@@ -157,7 +157,7 @@ static int setIndexBits(int num_sets)
  * @brief Given an address and the number of sets, get the tag bits.
  *
  * @param addr the address from which the tag bits are to be calculated
- * @param num_sets number of Sets in the Cache
+ * @param num_sets number of sets in the cache
  */
 int getTagBits(unsigned int addr, int num_sets)
 {
@@ -193,7 +193,7 @@ int getTagBits(unsigned int addr, int num_sets)
  *      - -1: Error
  * 
  */
-int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data){
+int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data, int *out_way){
     if(!cache || !cache->cache_sets){
         return -1;
     }
@@ -215,6 +215,11 @@ int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data){
             // Cache hit: Retrieve the data at the block offset
             if (out_data) {
                 *out_data = line->block[block_offset];
+            }
+            //which way matched is reported so a caller that then has to touch
+            //this line - or describe it - need not search for the tag again
+            if (out_way) {
+                *out_way = i;
             }
             line->last_access_time = global_time++;  // Update LRU timestamp
             // Cache hit

@@ -21,13 +21,19 @@ void reportStats(const Stats *stats);
 void reportCache(const Cache *cache);
 
 /**
- * @brief The one-line summary of an access.
+ * @brief How an address divides up, then what the access did with it.
  *
+ * @param sim the simulator, for the geometry the address is split by
  * @param op 'R' or 'W', the operation that was performed
  * @param addr the address accessed
  * @param info what the engine reported about it
+ *
+ * The tag/set/offset split is shown first because it is the reason for the
+ * outcome: the set comes out of the middle bits, so seeing them is what makes
+ * two addresses colliding look inevitable rather than arbitrary.
  */
-void reportAccess(char op, unsigned int addr, const AccessInfo *info);
+void reportAccess(const Simulator *sim, char op, unsigned int addr,
+                  const AccessInfo *info);
 
 //The internals behind that access: whether memory was consulted, which page,
 //and what became of the cache line. Printed only at the verbose narration level.

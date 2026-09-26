@@ -15,7 +15,7 @@ static void makeBlock(uint8_t out[BLOCK_SIZE], const char *label){
 void setUp(void) {
     // Initialize a cache with 4 sets and 2 lines per set
     Config config = {4, 1024, 2}; 
-    cache = initalizeCache(&config);
+    cache = initializeCache(&config);
 }
 
 void tearDown(void) {
@@ -46,7 +46,7 @@ void test_cacheAccess(void) {
     uint8_t out_data;
 
     // Check miss
-    int result = checkCache(cache, address, &out_data);
+    int result = checkCache(cache, address, &out_data, NULL);
     TEST_ASSERT_EQUAL(0, result);
 
     // Simulate fetching data and updating cache
@@ -57,7 +57,7 @@ void test_cacheAccess(void) {
                 block_data);
 
     // Check hit
-    result = checkCache(cache, address, &out_data);
+    result = checkCache(cache, address, &out_data, NULL);
     TEST_ASSERT_EQUAL(1, result);
 
 }
@@ -89,10 +89,10 @@ void test_RandomReplacement(void){
     makeBlock(block3, "Block3");
 
     // Access first two addresses (fills both lines)
-    checkCache(cache, address1, NULL);
+    checkCache(cache, address1, NULL, NULL);
     updateCache(handleLineReplacement(cache, address1, POLICY_RANDOM), getTagBits(address1, 4), block1);
 
-    checkCache(cache, address2, NULL);
+    checkCache(cache, address2, NULL, NULL);
     updateCache(handleLineReplacement(cache, address2, POLICY_RANDOM), getTagBits(address2, 4), block2);
 
     // Access a new address to trigger replacement
@@ -119,24 +119,24 @@ void test_LRUReplacement(void) {
     makeBlock(block3, "Block3");
 
     // Access first two addresses (fills both lines)
-    checkCache(cache, address1, NULL);
+    checkCache(cache, address1, NULL, NULL);
     updateCache(handleLineReplacement(cache, address1, POLICY_LRU), getTagBits(address1, 4), block1);
 
-    checkCache(cache, address2, NULL);
+    checkCache(cache, address2, NULL, NULL);
     updateCache(handleLineReplacement(cache, address2, POLICY_LRU), getTagBits(address2, 4), block2);
 
     //access line 1 again to make line 0 the least recently use line
-    checkCache(cache, address2, NULL);
+    checkCache(cache, address2, NULL, NULL);
 
     // Access a new address to trigger replacement
-    checkCache(cache, address3, NULL);
+    checkCache(cache, address3, NULL, NULL);
 
     Line *replaced_line = handleLineReplacement(cache, address3, POLICY_LRU);
     updateCache(replaced_line, getTagBits(address3, 4), block3);
     
     // Verify LRU replacement, line 0 should be replaced
     unsigned int tag = getTagBits(address3, 4);
-    TEST_ASSERT_EQUAL(tag, cache->cache_sets[1].cache_lines[0].tag); // Line 0 should be replaced
+    TEST_ASSERT_EQUAL(tag, cache->cache_sets[1].cache_lines[0].tag); // way 0 should be replaced
     
 }
 
@@ -146,7 +146,7 @@ void test_invalid_cache_access(void) {
     Cache *invalid_cache = NULL;
     unsigned int addr = 50;
 
-    int result = checkCache(invalid_cache, addr, NULL);
+    int result = checkCache(invalid_cache, addr, NULL, NULL);
     TEST_ASSERT_EQUAL(-1, result);  // Expect cache access to fail gracefully
 }
 
