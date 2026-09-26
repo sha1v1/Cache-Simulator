@@ -12,7 +12,7 @@ LIBSRCS = $(SRCDIR)/cache.c $(SRCDIR)/commands.c $(SRCDIR)/config.c \
           $(SRCDIR)/log.c $(SRCDIR)/memory.c $(SRCDIR)/report.c $(SRCDIR)/sim.c
 LIBOBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(LIBSRCS))
 
-SRCS = $(SRCDIR)/main.c $(LIBSRCS)
+SRCS = $(SRCDIR)/main.c $(SRCDIR)/cli.c $(LIBSRCS)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 TARGET    = $(BUILDDIR)/cache_sim

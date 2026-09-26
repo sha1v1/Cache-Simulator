@@ -20,33 +20,75 @@ make test
 ```
 
 ## Usage
-Run the program using
+The simulator is built to carry more than one front end, so it has to be told
+which one to run. Interactive mode steps through accesses by hand and narrates
+each one:
+
 ```
-./build/cache_sim
+./build/cache_sim --interactive
 ```
 
-It prints the active configuration and the command list, then waits at a prompt:
+Run with no arguments it prints the usage message and exits non-zero, rather
+than guessing which front end was meant.
+
+### Options
+| Option | Meaning |
+| --- | --- |
+| `-i`, `--interactive` | step through accesses one command at a time |
+| `--config PATH` | read settings from `PATH` instead of `config.txt` |
+| `-v`, `--verbose` | narrate the internals as well |
+| `-q`, `--quiet` | print only what was explicitly asked for |
+| `-h`, `--help` | show the usage message |
+
+A `--config` file named on the command line has to exist; the default
+`config.txt` merely being absent is not an error, since the built-in defaults
+are already a usable machine.
+
+Interactive mode prints the active configuration and the command list, then
+waits at a prompt. Each access is narrated in three parts: how the address
+divides into the fields the cache actually uses, what the cache did with it,
+and what main memory was asked for.
+
 ```
-cache> r 0x100
-R 0x0100  MISS  set 0  value 0x47 'G'  (filled line 0)
+cache>   0x100 = tag 0x2 | set 0 | offset 0   (25|2|5 bits)
+R 0x0100  MISS  set 0  value 0x2E '.'  (filled way 0, which was free)
+  memory page 1 (allocated by this access)
+  fetched all 32 bytes of the block, not just the byte asked for
 
-cache> r 0x104
-R 0x0104  HIT   set 0  value 0x33 '3'
+cache>   0x104 = tag 0x2 | set 0 | offset 4   (25|2|5 bits)
+R 0x0104  HIT   set 0  value 0x5C '\'  (served from way 0)
+  main memory not consulted
 
-cache> w 0x100 Z
-W 0x0100  HIT   set 0  value 0x5A 'Z'  -> cache + memory
+cache>   0x100 = tag 0x2 | set 0 | offset 0   (25|2|5 bits)
+W 0x0100  HIT   set 0  value 0x5A 'Z'  -> cache way 0 + memory
+  memory page 1
 
-cache> s
+cache>   0x180 = tag 0x3 | set 0 | offset 0   (25|2|5 bits)
+R 0x0180  MISS  set 0  value 0x49 'I'  (filled way 1, which was free)
+  memory page 1
+  fetched all 32 bytes of the block, not just the byte asked for
 
+cache>   0x200 = tag 0x4 | set 0 | offset 0   (25|2|5 bits)
+R 0x0200  MISS  set 0  value 0x6D 'm'  (filled way 1, evicting a valid line)
+  memory page 2 (allocated by this access)
+  fetched all 32 bytes of the block, not just the byte asked for
+
+cache> 
 Statistics
-  accesses    : 3 (2 reads, 1 writes)
-  hits        : 2 (66.67%)
-  misses      : 1 (33.33%)
-  read hits   : 1 / 2 (50.00%)
+  accesses    : 5 (4 reads, 1 writes)
+  hits        : 2 (40.00%)
+  misses      : 3 (60.00%)
+  read hits   : 1 / 4 (25.00%)
   write hits  : 1 / 1 (100.00%)
-  evictions   : 0
+  evictions   : 1
+  pages used  : 2
   errors      : 0
 ```
+
+Reading `0x104` hits because the miss on `0x100` brought in the whole 32-byte
+block around it, not just the byte asked for. `0x180` maps to the same set but
+carries a different tag, so it fills the set's other way; `0x200` is a third
+block competing for those two ways, so something has to go.
 
 ### Commands
 | Command | Meaning |
@@ -66,9 +108,10 @@ the same address. A value is a single character, or `0xNN` for a byte that is
 awkward to type. Arguments left off are prompted for, so plain `r` still works,
 as do the original menu numbers `1`–`4`.
 
-`v` turns on a running commentary of what the simulator is doing underneath —
-which memory page was allocated, which line was chosen and why — and turns it
-off again.
+Interactive mode narrates the internals by default: which memory page was
+touched, whether that access is what brought it into existence, and that a miss
+fetches an entire block. `v` toggles that commentary off and back on, and `-q`
+starts without it.
 
 ### Statistics
 `hits` and `misses` account for exactly the accesses that completed: an access
@@ -99,10 +142,10 @@ see different data.
 `d` dumps every line:
 ```
 *****CACHE STATE*****
-Set | Line | Valid | Tag     | Block Data
+Set | Way  | Valid | Tag     | Block Data
 -----------------------------------------
-  0 |    0 |     1 |       2 | p>~ZNQRqsOIW8nYga2D_Q<4B7N)_X|2
-  0 |    1 |     0 |       0 | ................................
+  0 |    0 |     1 |       2 | ZE~@\9pwz[W (,R$wu}Ku=p-sHq;.[/E
+  0 |    1 |     1 |       4 | m/m4]n'u:V:U+i:Tp#E#`Gf{2'z2` 0\
   1 |    0 |     0 |       0 | ................................
   1 |    1 |     0 |       0 | ................................
   2 |    0 |     0 |       0 | ................................
@@ -119,7 +162,7 @@ The engine knows nothing about how it is driven, and the front end knows nothing
 about how the cache works. Dependencies only ever point downward:
 
 ```
-main.c  commands.c        front end: what to do, and reading input
+main.c  cli.c  commands.c   front end: arguments, what to do, reading input
              |
          report.c         presentation: turning results into text
              |
@@ -132,7 +175,8 @@ main.c  commands.c        front end: what to do, and reading input
 
 | Path | Layer | Contents |
 | --- | --- | --- |
-| [src/main.c](src/main.c) | front end | reads the configuration and starts the prompt |
+| [src/main.c](src/main.c) | front end | picks a front end from the arguments, then builds the simulator |
+| [src/cli.c](src/cli.c) | front end | what the command line arguments mean |
 | [src/commands.c](src/commands.c) | front end | the command language and the menu loop |
 | [src/report.c](src/report.c) | presentation | every line of text the program prints |
 | [src/log.c](src/log.c) | presentation | output level, for the layers that print |

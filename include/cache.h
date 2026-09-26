@@ -24,12 +24,17 @@ typedef struct {
 } Cache;
 
 
-Cache* initalizeCache(Config *config);
+Cache* initializeCache(Config *config);
 int initializeSets(Set* sets, int num_sets, int lines_per_set);
 int getSetIndex(unsigned int addr, int num_sets);
 int getBlockOffset(unsigned int addr);
 int getTagBits(unsigned int addr, int num_sets);
-int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data);
+//out_way receives the way within the set that matched, on a hit; may be NULL.
+int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data, int *out_way);
+
+//Number of address bits needed to index num_sets sets, i.e. an exact log2().
+//Public because the presentation layer shows how an address divides up.
+int setIndexBits(int num_sets);
 Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy policy);
 Line *randomReplacement(Set *set);
 Line* leastRecentlyUsed(Set *set);

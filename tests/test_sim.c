@@ -52,7 +52,7 @@ void test_write_through_no_write_allocate(void) {
     /* a write to an absent address must not pull the block into the cache */
     TEST_ASSERT_EQUAL(SIM_OK, simWrite(&sim, 0x40, 'A', &info));
     TEST_ASSERT_EQUAL(ACCESS_MISS, info.result);
-    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x40, NULL));
+    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x40, NULL, NULL));
     TEST_ASSERT_EQUAL(1, sim.stats.write_misses);
 
     /* but it must have reached memory, so the read that follows sees it */
@@ -65,7 +65,7 @@ void test_write_through_no_write_allocate(void) {
     TEST_ASSERT_EQUAL(1, sim.stats.write_hits);
 
     uint8_t cached = 0;
-    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x40, &cached));
+    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x40, &cached, NULL));
     TEST_ASSERT_EQUAL('B', cached);
     TEST_ASSERT_EQUAL('B', readFromMemory(&sim.memory, 0x40));
 }
@@ -86,8 +86,8 @@ void test_eviction_is_counted_once_the_set_is_full(void) {
     TEST_ASSERT_EQUAL(1, sim.stats.evictions);
 
     /* LRU evicted the older of the two, so that one is gone and the other stays */
-    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x000, NULL));
-    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x080, NULL));
+    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x000, NULL, NULL));
+    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x080, NULL, NULL));
 }
 
 void test_failed_access_counts_only_as_an_error(void) {
@@ -109,7 +109,7 @@ void test_reset_empties_the_cache_and_the_stats(void) {
 
     TEST_ASSERT_EQUAL(SIM_OK, simReset(&sim));
 
-    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x100, NULL));
+    TEST_ASSERT_EQUAL(0, checkCache(sim.cache, 0x100, NULL, NULL));
     TEST_ASSERT_EQUAL(0, sim.stats.reads);
     TEST_ASSERT_EQUAL(0, sim.stats.read_misses);
 }
@@ -125,11 +125,11 @@ void test_command_lines_drive_the_simulator(void) {
     /* a one-character value is that character; 0xNN is a byte */
     TEST_ASSERT_EQUAL(CMD_OK, runLine("w 0x100 7"));
     uint8_t cached = 0;
-    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x100, &cached));
+    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x100, &cached, NULL));
     TEST_ASSERT_EQUAL('7', cached);
 
     TEST_ASSERT_EQUAL(CMD_OK, runLine("write 0x100 0x41"));
-    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x100, &cached));
+    TEST_ASSERT_EQUAL(1, checkCache(sim.cache, 0x100, &cached, NULL));
     TEST_ASSERT_EQUAL(0x41, cached);
 
     TEST_ASSERT_EQUAL(CMD_QUIT, runLine("q"));

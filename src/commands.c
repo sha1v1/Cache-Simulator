@@ -200,7 +200,7 @@ CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
             reportAccessError(status, addr);
             return CMD_FAILED;
         }
-        reportAccess('R', addr, &info);
+        reportAccess(sim, 'R', addr, &info);
         reportAccessDetail(sim, 'R', addr, &info);
         return CMD_OK;
     }
@@ -229,7 +229,7 @@ CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
             reportAccessError(status, addr);
             return CMD_FAILED;
         }
-        reportAccess('W', addr, &info);
+        reportAccess(sim, 'W', addr, &info);
         reportAccessDetail(sim, 'W', addr, &info);
         return CMD_OK;
     }

@@ -9,7 +9,7 @@
  * @brief Initialize the Main memory Structure with user provided configuration.
  * 
  * @param memory A pointer to the Memory structure.
- * @param config A pointer to the Config Structure
+ * @param config A pointer to the Config structure
  * 
  * Sets the total memory size, page size, calculates number of pages required. It also allocates memory for
  * the page_table which is essentially an array of pointers to all these pages. These pointers are

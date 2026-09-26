@@ -1,5 +1,6 @@
 #include "../include/report.h"
 #include "../include/log.h"
+#include <limits.h>
 #include <stdio.h>
 
 void reportConfig(const Simulator *sim){
@@ -48,7 +49,7 @@ void reportCache(const Cache *cache){
     }
 
     printf("\n\n*****CACHE STATE*****\n");
-    printf("Set | Line | Valid | Tag     | Block Data\n");
+    printf("Set | Way  | Valid | Tag     | Block Data\n");
     printf("-----------------------------------------\n");
 
     for(int i = 0; i < cache->num_sets; i++){
@@ -94,23 +95,57 @@ static const char *quotedChar(int value, char *buf){
     return buf;
 }
 
-void reportAccess(char op, unsigned int addr, const AccessInfo *info){
+/**
+ * @brief The three fields an address splits into, with the width of each.
+ *
+ * The widths are derived rather than stated: the offset is fixed by the block
+ * size, the set field by how many sets there are, and the tag is whatever is
+ * left of the address, so none of the three can drift out of step with the
+ * geometry actually in use.
+ */
+static void reportAddressFields(const Simulator *sim, unsigned int addr){
+    int num_sets    = sim->config.num_sets;
+    int offset_bits = BLOCK_OFFSET_BITS;
+    int set_bits    = setIndexBits(num_sets);
+    int tag_bits    = (int)(sizeof(unsigned int) * CHAR_BIT) - set_bits - offset_bits;
+
+    logInfo("  0x%X = tag 0x%X | set %d | offset %d   (%d|%d|%d bits)\n",
+            addr,
+            (unsigned int)getTagBits(addr, num_sets),
+            getSetIndex(addr, num_sets),
+            getBlockOffset(addr),
+            tag_bits, set_bits, offset_bits);
+}
+
+void reportAccess(const Simulator *sim, char op, unsigned int addr,
+                  const AccessInfo *info){
     char charbuf[5];
     const char *outcome = (info->result == ACCESS_HIT) ? "HIT " : "MISS";
+
+    reportAddressFields(sim, addr);
 
     logInfo("%c 0x%04X  %s  set %d  value 0x%02X%s",
             op, addr, outcome, info->set_index, info->value,
             quotedChar(info->value, charbuf));
 
-    if(op == 'R' && info->result == ACCESS_MISS){
-        logInfo("  (filled line %d%s)", info->line_index,
-                info->evicted ? ", evicted" : "");
+    if(op == 'R'){
+        if(info->result == ACCESS_HIT){
+            logInfo("  (served from way %d)", info->line_index);
+        }
+        else{
+            logInfo("  (filled way %d, %s)", info->line_index,
+                    info->evicted ? "evicting a valid line" : "which was free");
+        }
     }
-    else if(op == 'W'){
+    else{
         //write-through means memory is updated either way; say so, and say when
         //the cache was deliberately left alone
-        logInfo(info->result == ACCESS_HIT ? "  -> cache + memory"
-                                           : "  -> memory only (no-write-allocate)");
+        if(info->result == ACCESS_HIT){
+            logInfo("  -> cache way %d + memory", info->line_index);
+        }
+        else{
+            logInfo("  -> memory only (no-write-allocate)");
+        }
     }
     logInfo("\n");
 }
@@ -121,42 +156,32 @@ void reportAccessDetail(const Simulator *sim, char op, unsigned int addr,
         return;
     }
 
+    //reportAccess has already named the set, the way and the eviction, so what
+    //is left to add is the memory side of the access: whether main memory was
+    //consulted at all, and what it gave up when it was.
+
     //a read hit is answered by the cache alone, so naming a page there would
     //suggest main memory was consulted when the whole point is that it was not.
     //A write always reaches memory, hit or miss, because writes are write-through.
     bool touched_memory = (op == 'W') || (info->result == ACCESS_MISS);
 
-    if(touched_memory){
-        //derived here rather than carried in AccessInfo: the address and the
-        //memory geometry are both to hand, so the engine need not report what
-        //can be recomputed
-        logVerbose("  memory page %d%s, block offset %d\n",
-                   (int)addr / sim->memory.page_size,
-                   info->page_allocated ? " (allocated by this access)" : "",
-                   getBlockOffset(addr));
-    }
-    else{
-        logVerbose("  block offset %d, main memory not consulted\n", getBlockOffset(addr));
+    if(!touched_memory){
+        logVerbose("  main memory not consulted\n");
+        return;
     }
 
-    if(op == 'R'){
-        if(info->result == ACCESS_HIT){
-            logVerbose("  served from set %d\n", info->set_index);
-        }
-        else{
-            logVerbose("  set %d line %d filled, %s\n",
-                       info->set_index, info->line_index,
-                       info->evicted ? "displacing a valid line" : "which was free");
-        }
-    }
-    else{
-        if(info->result == ACCESS_HIT){
-            logVerbose("  set %d line %d updated in place\n",
-                       info->set_index, info->line_index);
-        }
-        else{
-            logVerbose("  set %d untouched: no-write-allocate\n", info->set_index);
-        }
+    //derived here rather than carried in AccessInfo: the address and the memory
+    //geometry are both to hand, so the engine need not report what can be
+    //recomputed
+    logVerbose("  memory page %d%s\n",
+               (int)addr / sim->memory.page_size,
+               info->page_allocated ? " (allocated by this access)" : "");
+
+    //the reason the next few nearby addresses will hit: a miss does not fetch the
+    //byte that was asked for, it fetches the whole block that byte sits in
+    if(op == 'R' && info->result == ACCESS_MISS){
+        logVerbose("  fetched all %d bytes of the block, not just the byte asked for\n",
+                   BLOCK_SIZE);
     }
 }
 
