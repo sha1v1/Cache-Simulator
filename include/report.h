@@ -13,12 +13,12 @@
  */
 
 //The active configuration, and the running totals.
-void reportConfig(const Simulator *sim);
-void reportStats(const Stats *stats);
+void report_config(const simulator_t *sim);
+void report_stats(const stats_t *stats);
 
 //Every line of the cache, as a table. Unprintable bytes are shown as '.' the way
 //hexdump does, since a block holds arbitrary bytes and has no terminator.
-void reportCache(const Cache *cache);
+void report_cache(const cache_t *cache);
 
 /**
  * @brief How an address divides up, then what the access did with it.
@@ -32,22 +32,22 @@ void reportCache(const Cache *cache);
  * outcome: the set comes out of the middle bits, so seeing them is what makes
  * two addresses colliding look inevitable rather than arbitrary.
  */
-void reportAccess(const Simulator *sim, char op, unsigned int addr,
-                  const AccessInfo *info);
+void report_access(const simulator_t *sim, char op, unsigned int addr,
+                  const access_info_t *info);
 
 //The internals behind that access: whether memory was consulted, which page,
 //and what became of the cache line. Printed only at the verbose narration level.
-void reportAccessDetail(const Simulator *sim, char op, unsigned int addr,
-                        const AccessInfo *info);
+void report_access_detail(const simulator_t *sim, char op, unsigned int addr,
+                        const access_info_t *info);
 
 //Why a simulator could not be built, naming the offending setting's value.
-void reportStartupError(SimStatus status, const Config *config);
+void report_startup_error(sim_status_t status, const config_t *config);
 
 //Why a single access failed.
-void reportAccessError(SimStatus status, unsigned int addr);
+void report_access_error(sim_status_t status, unsigned int addr);
 
 //A config file that could not be read. detail may be NULL, for a file that could
 //not be opened at all.
-void reportConfigFileError(const char *path, const char *detail);
+void report_config_file_error(const char *path, const char *detail);
 
 #endif

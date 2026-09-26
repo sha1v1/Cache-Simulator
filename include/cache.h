@@ -10,36 +10,36 @@ typedef struct {
     unsigned int tag;   
     uint8_t block[BLOCK_SIZE];   //raw bytes, not a string - no terminator
     unsigned int last_access_time;
-} Line;
+} line_t;
 
 typedef struct {
-    Line *cache_lines; //pointer to array of lines
+    line_t *cache_lines; //pointer to array of lines
     int lines_per_set;
-} Set;
+} set_t;
 
 typedef struct {
-    Set* cache_sets;
+    set_t* cache_sets;
     int num_sets;
     int lines_per_set; //just easy to access lol
-} Cache;
+} cache_t;
 
 
-Cache* initializeCache(Config *config);
-int initializeSets(Set* sets, int num_sets, int lines_per_set);
-int getSetIndex(unsigned int addr, int num_sets);
-int getBlockOffset(unsigned int addr);
-int getTagBits(unsigned int addr, int num_sets);
+cache_t* initialize_cache(config_t *config);
+int initialize_sets(set_t* sets, int num_sets, int lines_per_set);
+int get_set_index(unsigned int addr, int num_sets);
+int get_block_offset(unsigned int addr);
+int get_tag_bits(unsigned int addr, int num_sets);
 //out_way receives the way within the set that matched, on a hit; may be NULL.
-int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data, int *out_way);
+int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_way);
 
 //Number of address bits needed to index num_sets sets, i.e. an exact log2().
 //Public because the presentation layer shows how an address divides up.
-int setIndexBits(int num_sets);
-Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy policy);
-Line *randomReplacement(Set *set);
-Line* leastRecentlyUsed(Set *set);
-void updateCache(Line *line, int tag_bits, const uint8_t *block_data);
-void freeCache(Cache *cache);
+int set_index_bits(int num_sets);
+line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_policy_t policy);
+line_t *random_replacement(set_t *set);
+line_t* least_recently_used(set_t *set);
+void update_cache(line_t *line, int tag_bits, const uint8_t *block_data);
+void free_cache(cache_t *cache);
 
 #endif
 

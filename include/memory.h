@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 //Bytes per cache block: the unit memory and cache exchange, and the size of
-//the data array in a cache line. Defined here because fetchBlockFromMemory
+//the data array in a cache line. Defined here because fetch_block_from_memory
 //produces blocks of exactly this size; cache.h includes this header.
 //Must be a power of two, since the block offset is masked out of an address.
 #define BLOCK_SIZE        32
@@ -19,14 +19,14 @@ typedef struct {
     int total_size;     // Total memory size in bytes
     int page_size;      // Size of each page in bytes
     int num_pages;      // Total number of pages
-} Memory;
+} memory_t;
 
 //Returns 0 on success, or -1 if the size is unusable or allocation failed.
-int initializeMemory(Memory *memory, Config *config);
-int allocatePage(Memory *memory, int page_index);
-int readFromMemory(Memory *memory, int address);
-int writeToMemory(Memory *memory, int address, uint8_t value);
-int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t **block_data);
-void freeMemory(Memory *memory);
+int initialize_memory(memory_t *memory, config_t *config);
+int allocate_page(memory_t *memory, int page_index);
+int read_from_memory(memory_t *memory, int address);
+int write_to_memory(memory_t *memory, int address, uint8_t value);
+int fetch_block_from_memory(memory_t *memory, unsigned int addr, uint8_t **block_data);
+void free_memory(memory_t *memory);
 
 #endif

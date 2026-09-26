@@ -15,19 +15,19 @@ typedef enum {
     LOG_QUIET   = 0,   //results the user explicitly asked for, nothing else
     LOG_NORMAL  = 1,   //one line per access: hit/miss, value, eviction
     LOG_VERBOSE = 2    //internals too: pages allocated, lines chosen and filled
-} LogLevel;
+} log_level_t;
 
-void setLogLevel(LogLevel level);
-LogLevel getLogLevel(void);
+void set_log_level(log_level_t level);
+log_level_t get_log_level(void);
 
 //Printed at LOG_NORMAL and above, on stdout.
-void logInfo(const char *fmt, ...);
+void log_info(const char *fmt, ...);
 
 //Printed at LOG_VERBOSE only, on stdout.
-void logVerbose(const char *fmt, ...);
+void log_verbose(const char *fmt, ...);
 
 //Always printed, whatever the level, on stderr: a failure must not be silenced, and
 //diagnostics stay out of a redirected results stream.
-void logError(const char *fmt, ...);
+void log_error(const char *fmt, ...);
 
 #endif

@@ -20,7 +20,7 @@
  * Hand-rolled rather than strtok_r so the file needs no feature macros to build
  * the same way everywhere.
  */
-static char *nextToken(char **cursor){
+static char *next_token(char **cursor){
     char *s = *cursor;
     while(*s && isspace((unsigned char)*s)){
         s++;
@@ -52,7 +52,7 @@ static char *nextToken(char **cursor){
  * in this program; base 16 also accepts the 0x prefix, so both "100" and "0x100"
  * mean the same address and neither silently parses as decimal.
  */
-static int parseAddress(const char *token, unsigned int *out){
+static int parse_address(const char *token, unsigned int *out){
     errno = 0;
     char *end = NULL;
     unsigned long value = strtoul(token, &end, 16);
@@ -79,7 +79,7 @@ static int parseAddress(const char *token, unsigned int *out){
  * has. Anything longer has to say what it means with 0x41 or \x41, which is what
  * keeps "7" and "0x37" from being two readings of the same token.
  */
-static int parseByte(const char *token, uint8_t *out){
+static int parse_byte(const char *token, uint8_t *out){
     if(token[0] != '\0' && token[1] == '\0'){
         *out = (uint8_t)token[0];
         return 0;
@@ -106,7 +106,7 @@ static int parseByte(const char *token, uint8_t *out){
     return 0;
 }
 
-void printCommandHelp(void){
+void print_command_help(void){
     printf("\nCommands\n");
     printf("  r <addr>            read a byte     (r 0x100)\n");
     printf("  w <addr> <value>    write a byte    (w 0x1a f  |  w 0x1a 0x41)\n");
@@ -130,7 +130,7 @@ void printCommandHelp(void){
  * A line longer than the buffer has its remainder discarded, so the leftover
  * characters cannot come back as a second, bogus command.
  */
-static int readLine(char *buf, size_t size){
+static int read_line(char *buf, size_t size){
     if(!fgets(buf, (int)size, stdin)){
         return 0;
     }
@@ -142,7 +142,7 @@ static int readLine(char *buf, size_t size){
     //no newline yet: the line was too long, so throw away the rest of it
     int c;
     while((c = getchar()) != '\n' && c != EOF);
-    logError("Warning: input line too long, truncated\n");
+    log_error("Warning: input line too long, truncated\n");
     return 1;
 }
 
@@ -159,25 +159,25 @@ static int readLine(char *buf, size_t size){
  * command or be asked for. A caller with nobody to ask passes interactive false
  * and gets a plain syntax error instead of a hung prompt.
  */
-static char *tokenOrPrompt(char **cursor, const char *prompt, bool interactive,
+static char *token_or_prompt(char **cursor, const char *prompt, bool interactive,
                            char *buf, size_t size){
-    char *token = nextToken(cursor);
+    char *token = next_token(cursor);
     if(token || !interactive){
         return token;
     }
 
     printf("%s", prompt);
     fflush(stdout);
-    if(!readLine(buf, size)){
+    if(!read_line(buf, size)){
         return NULL;
     }
     char *reply = buf;
-    return nextToken(&reply);
+    return next_token(&reply);
 }
 
-CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
+command_status_t run_command_line(simulator_t *sim, char *line, bool interactive){
     char *cursor = line;
-    char *cmd = nextToken(&cursor);
+    char *cmd = next_token(&cursor);
 
     //blank lines and comments are not commands, so they are quietly skipped
     if(!cmd || cmd[0] == '#'){
@@ -185,68 +185,68 @@ CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
     }
 
     char argbuf[LINE_MAX_LEN];
-    AccessInfo info;
+    access_info_t info;
 
     if(strcasecmp(cmd, "r") == 0 || strcasecmp(cmd, "read") == 0 || strcmp(cmd, "1") == 0){
-        char *token = tokenOrPrompt(&cursor, "Address (hex): 0x", interactive,
+        char *token = token_or_prompt(&cursor, "Address (hex): 0x", interactive,
                                     argbuf, sizeof(argbuf));
         unsigned int addr;
-        if(!token || parseAddress(token, &addr) != 0){
-            logError("Error: expected an address, as in 'r 0x100'\n");
+        if(!token || parse_address(token, &addr) != 0){
+            log_error("Error: expected an address, as in 'r 0x100'\n");
             return CMD_SYNTAX_ERROR;
         }
-        SimStatus status = simRead(sim, addr, &info);
+        sim_status_t status = sim_read(sim, addr, &info);
         if(status != SIM_OK){
-            reportAccessError(status, addr);
+            report_access_error(status, addr);
             return CMD_FAILED;
         }
-        reportAccess(sim, 'R', addr, &info);
-        reportAccessDetail(sim, 'R', addr, &info);
+        report_access(sim, 'R', addr, &info);
+        report_access_detail(sim, 'R', addr, &info);
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "w") == 0 || strcasecmp(cmd, "write") == 0 || strcmp(cmd, "2") == 0){
-        char *token = tokenOrPrompt(&cursor, "Address (hex): 0x", interactive,
+        char *token = token_or_prompt(&cursor, "Address (hex): 0x", interactive,
                                     argbuf, sizeof(argbuf));
         unsigned int addr;
-        if(!token || parseAddress(token, &addr) != 0){
-            logError("Error: expected an address, as in 'w 0x1a f'\n");
+        if(!token || parse_address(token, &addr) != 0){
+            log_error("Error: expected an address, as in 'w 0x1a f'\n");
             return CMD_SYNTAX_ERROR;
         }
 
         //a second scratch buffer: the address may already be living in argbuf
         char valbuf[LINE_MAX_LEN];
-        token = tokenOrPrompt(&cursor, "Value (character or 0xNN): ", interactive,
+        token = token_or_prompt(&cursor, "Value (character or 0xNN): ", interactive,
                               valbuf, sizeof(valbuf));
         uint8_t value;
-        if(!token || parseByte(token, &value) != 0){
-            logError("Error: expected one character or a byte like 0x41\n");
+        if(!token || parse_byte(token, &value) != 0){
+            log_error("Error: expected one character or a byte like 0x41\n");
             return CMD_SYNTAX_ERROR;
         }
 
-        SimStatus status = simWrite(sim, addr, value, &info);
+        sim_status_t status = sim_write(sim, addr, value, &info);
         if(status != SIM_OK){
-            reportAccessError(status, addr);
+            report_access_error(status, addr);
             return CMD_FAILED;
         }
-        reportAccess(sim, 'W', addr, &info);
-        reportAccessDetail(sim, 'W', addr, &info);
+        report_access(sim, 'W', addr, &info);
+        report_access_detail(sim, 'W', addr, &info);
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "d") == 0 || strcasecmp(cmd, "display") == 0 ||
        strcasecmp(cmd, "cache") == 0 || strcmp(cmd, "3") == 0){
-        reportCache(sim->cache);
+        report_cache(sim->cache);
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "s") == 0 || strcasecmp(cmd, "stats") == 0){
-        reportStats(&sim->stats);
+        report_stats(&sim->stats);
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "c") == 0 || strcasecmp(cmd, "config") == 0){
-        reportConfig(sim);
+        report_config(sim);
         return CMD_OK;
     }
 
@@ -254,25 +254,25 @@ CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
         //the internals - which page was allocated, which line was chosen - are
         //worth seeing when following the mechanism and noise the rest of the
         //time, so they are a toggle rather than a permanent setting
-        bool turning_on = getLogLevel() < LOG_VERBOSE;
-        setLogLevel(turning_on ? LOG_VERBOSE : LOG_NORMAL);
-        logInfo("Verbose narration %s.\n", turning_on ? "on" : "off");
+        bool turning_on = get_log_level() < LOG_VERBOSE;
+        set_log_level(turning_on ? LOG_VERBOSE : LOG_NORMAL);
+        log_info("Verbose narration %s.\n", turning_on ? "on" : "off");
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "reset") == 0){
-        SimStatus status = simReset(sim);
+        sim_status_t status = sim_reset(sim);
         if(status != SIM_OK){
-            logError("Error: %s; nothing was changed\n", simStatusMessage(status));
+            log_error("Error: %s; nothing was changed\n", sim_status_message(status));
             return CMD_FAILED;
         }
-        logInfo("Cache emptied and statistics cleared.\n");
+        log_info("Cache emptied and statistics cleared.\n");
         return CMD_OK;
     }
 
     if(strcasecmp(cmd, "h") == 0 || strcasecmp(cmd, "help") == 0 ||
        strcmp(cmd, "?") == 0 || strcasecmp(cmd, "menu") == 0){
-        printCommandHelp();
+        print_command_help();
         return CMD_OK;
     }
 
@@ -281,21 +281,21 @@ CommandStatus runCommandLine(Simulator *sim, char *line, bool interactive){
         return CMD_QUIT;
     }
 
-    logError("Error: unknown command '%s'. Type 'h' for the command list.\n", cmd);
+    log_error("Error: unknown command '%s'. Type 'h' for the command list.\n", cmd);
     return CMD_SYNTAX_ERROR;
 }
 
-int runInteractive(Simulator *sim){
+int run_interactive(simulator_t *sim){
     printf("--- Cache Simulator ---\n");
-    reportConfig(sim);
-    printCommandHelp();
+    report_config(sim);
+    print_command_help();
 
     char line[LINE_MAX_LEN];
     while(1){
         printf("\ncache> ");
         fflush(stdout);
 
-        if(!readLine(line, sizeof(line))){
+        if(!read_line(line, sizeof(line))){
             //stdin closed, e.g. a piped script that ran out or a Ctrl-D
             printf("\nEnd of input. Exiting Cache Simulator...\n");
             return 0;
@@ -303,7 +303,7 @@ int runInteractive(Simulator *sim){
 
         //a bad command is reported and the prompt comes back: only 'q' and end
         //of input end the session
-        if(runCommandLine(sim, line, true) == CMD_QUIT){
+        if(run_command_line(sim, line, true) == CMD_QUIT){
             printf("Exiting Cache Simulator...\n");
             return 0;
         }

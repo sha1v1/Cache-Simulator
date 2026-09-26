@@ -12,7 +12,7 @@
  * functions below.
  *
  * Nothing in this layer writes to stdout or stderr. Every outcome is returned
- * as data - a SimStatus, an AccessInfo, the Stats struct - so that how a result
+ * as data - a sim_status_t, an access_info_t, the stats_t struct - so that how a result
  * is worded, and whether it is shown at all, is decided by whoever is driving.
  * That is what lets a menu and a command line share this code without either of
  * them being built into it.
@@ -28,7 +28,7 @@ typedef enum {
     SIM_ERR_OUT_OF_MEMORY,     //an allocation failed
     SIM_ERR_ADDRESS_RANGE,     //the address lies outside main memory
     SIM_ERR_NOT_INITIALIZED    //the simulator was never successfully built
-} SimStatus;
+} sim_status_t;
 
 /**
  * @brief The canonical meaning of a status code, as one short phrase.
@@ -37,7 +37,7 @@ typedef enum {
  * layout, no punctuation and none of the offending values, which the caller
  * holds and can word as it likes.
  */
-const char *simStatusMessage(SimStatus status);
+const char *sim_status_message(sim_status_t status);
 
 //Running totals for a session. Kept per-simulator rather than in a global so a
 //reset can clear them, and so they describe one machine rather than the process.
@@ -54,50 +54,50 @@ typedef struct {
     unsigned long evictions;        //misses that had to displace a valid line
     unsigned long pages_allocated;  //memory pages brought into existence by an access
     unsigned long errors;           //accesses that failed, e.g. an out-of-range address
-} Stats;
+} stats_t;
 
 //Everything one simulated machine owns. Bundling it means the read/write logic
 //takes no globals and every front end drives the same object.
 typedef struct {
-    Config config;      //a copy: the simulator owns its settings
-    Memory memory;
-    Cache *cache;
-    Stats  stats;
-} Simulator;
+    config_t config;      //a copy: the simulator owns its settings
+    memory_t memory;
+    cache_t *cache;
+    stats_t  stats;
+} simulator_t;
 
 typedef enum {
     ACCESS_HIT,
     ACCESS_MISS,
     ACCESS_ERROR
-} AccessResult;
+} access_result_t;
 
 //What one access did, for the caller to report however it likes. Keeping the
 //formatting out of here is what lets one caller print a sentence and another
 //print a machine-readable row from the same access.
 typedef struct {
-    AccessResult result;
+    access_result_t result;
     int  value;           //the byte read or written, or -1 on error
     int  set_index;       //set the address mapped to, -1 on error
     int  line_index;      //line filled or updated, -1 if no line was touched
     bool evicted;         //true if the line used held valid data beforehand
     bool page_allocated;  //true if this access is what brought the page into existence
-} AccessInfo;
+} access_info_t;
 
 /**
  * @brief Validates a configuration and builds a simulator from it.
  *
- * @param sim the Simulator to initialize
+ * @param sim the simulator_t to initialize
  * @param config the settings to copy in
- * @return SimStatus SIM_OK, or which setting was unusable
+ * @return sim_status_t SIM_OK, or which setting was unusable
  */
-SimStatus simInit(Simulator *sim, const Config *config);
+sim_status_t sim_init(simulator_t *sim, const config_t *config);
 
-//Releases the cache and memory. Safe to call on a simulator simInit() failed on.
-void simFree(Simulator *sim);
+//Releases the cache and memory. Safe to call on a simulator sim_init() failed on.
+void sim_free(simulator_t *sim);
 
 //Empties the cache and zeroes the statistics, leaving main memory as it is.
 //The simulator is left untouched if the cache could not be rebuilt.
-SimStatus simReset(Simulator *sim);
+sim_status_t sim_reset(simulator_t *sim);
 
 /**
  * @brief Reads one byte through the cache, filling a line on a miss.
@@ -105,9 +105,9 @@ SimStatus simReset(Simulator *sim);
  * @param sim the simulator to read through
  * @param addr the address to read
  * @param info where the outcome is recorded; may be NULL
- * @return SimStatus SIM_OK, or why the access failed
+ * @return sim_status_t SIM_OK, or why the access failed
  */
-SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info);
+sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info);
 
 /**
  * @brief Writes one byte, write-through with no-write-allocate.
@@ -116,11 +116,11 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info);
  * @param addr the address to write
  * @param value the byte to store
  * @param info where the outcome is recorded; may be NULL
- * @return SimStatus SIM_OK, or why the access failed
+ * @return sim_status_t SIM_OK, or why the access failed
  */
-SimStatus simWrite(Simulator *sim, unsigned int addr, uint8_t value, AccessInfo *info);
+sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, access_info_t *info);
 
 //Bytes of cache the configuration describes, for a caller reporting the setup.
-int simCacheSize(const Simulator *sim);
+int sim_cache_size(const simulator_t *sim);
 
 #endif

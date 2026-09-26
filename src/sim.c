@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char *simStatusMessage(SimStatus status){
+const char *sim_status_message(sim_status_t status){
     //No default case: -Wswitch then warns here if a status is added to the enum
     //and this function is not updated.
     switch(status){
@@ -18,12 +18,12 @@ const char *simStatusMessage(SimStatus status){
 }
 
 /**
- * @brief Resets an AccessInfo to the "nothing happened" state.
+ * @brief Resets an access_info_t to the "nothing happened" state.
  *
  * Every field is set here so a caller reading info after an early error never
  * sees a stale set or line index left over from the previous access.
  */
-static void clearInfo(AccessInfo *info){
+static void clear_info(access_info_t *info){
     if(!info){
         return;
     }
@@ -42,8 +42,8 @@ static void clearInfo(AccessInfo *info){
  * the engine say which setting was wrong: those modules can only refuse, while
  * this one holds the whole configuration and can name the part at fault.
  */
-static SimStatus validateConfig(const Config *config){
-    //getSetIndex masks address bits, which only computes blockNumber % num_sets
+static sim_status_t validate_config(const config_t *config){
+    //get_set_index masks address bits, which only computes block_number % num_sets
     //when num_sets is a power of two. n & (n-1) clears the lowest set bit, so
     //zero means only one bit was set.
     if(config->num_sets <= 0 || (config->num_sets & (config->num_sets - 1)) != 0){
@@ -52,7 +52,7 @@ static SimStatus validateConfig(const Config *config){
     if(config->lines_per_set <= 0){
         return SIM_ERR_LINES_PER_SET;
     }
-    //fetchBlockFromMemory aligns down to a block boundary and always reads
+    //fetch_block_from_memory aligns down to a block boundary and always reads
     //BLOCK_SIZE bytes, so a memory that doesn't end on one would have its last
     //block run past the end.
     if(config->main_memory_size <= 0 || config->main_memory_size % BLOCK_SIZE != 0){
@@ -61,50 +61,50 @@ static SimStatus validateConfig(const Config *config){
     return SIM_OK;
 }
 
-SimStatus simInit(Simulator *sim, const Config *config){
+sim_status_t sim_init(simulator_t *sim, const config_t *config){
     memset(sim, 0, sizeof(*sim));
 
-    SimStatus status = validateConfig(config);
+    sim_status_t status = validate_config(config);
     if(status != SIM_OK){
         return status;
     }
     sim->config = *config;
 
-    if(initializeMemory(&sim->memory, &sim->config) != 0){
+    if(initialize_memory(&sim->memory, &sim->config) != 0){
         return SIM_ERR_OUT_OF_MEMORY;   //the sizes are already known to be sound
     }
 
-    sim->cache = initializeCache(&sim->config);
+    sim->cache = initialize_cache(&sim->config);
     if(!sim->cache){
         //memory is already up, so tear it down rather than leaking it on the
         //way out of a failed startup
-        freeMemory(&sim->memory);
+        free_memory(&sim->memory);
         return SIM_ERR_OUT_OF_MEMORY;
     }
 
     return SIM_OK;
 }
 
-void simFree(Simulator *sim){
+void sim_free(simulator_t *sim){
     if(!sim){
         return;
     }
     if(sim->cache){
-        freeCache(sim->cache);   //frees the lines, the sets array, and the Cache struct
+        free_cache(sim->cache);   //frees the lines, the sets array, and the cache_t struct
         sim->cache = NULL;
     }
-    //frees the pages and the page table. The Memory struct itself lives inside
-    //the Simulator, so there is nothing further to release.
-    freeMemory(&sim->memory);
+    //frees the pages and the page table. The memory_t struct itself lives inside
+    //the simulator_t, so there is nothing further to release.
+    free_memory(&sim->memory);
 }
 
-SimStatus simReset(Simulator *sim){
-    Cache *fresh = initializeCache(&sim->config);
+sim_status_t sim_reset(simulator_t *sim){
+    cache_t *fresh = initialize_cache(&sim->config);
     if(!fresh){
         //the old cache is still intact, so the simulator stays usable
         return SIM_ERR_OUT_OF_MEMORY;
     }
-    freeCache(sim->cache);
+    free_cache(sim->cache);
     sim->cache = fresh;
     memset(&sim->stats, 0, sizeof(sim->stats));
     return SIM_OK;
@@ -118,7 +118,7 @@ SimStatus simReset(Simulator *sim){
  * Checked here rather than left to memory.c so the engine can distinguish a bad
  * address from a failed allocation: the memory module reports both the same way.
  */
-static SimStatus checkAddress(const Simulator *sim, unsigned int addr, int *page_index){
+static sim_status_t check_address(const simulator_t *sim, unsigned int addr, int *page_index){
     if(!sim->cache || !sim->memory.page_table){
         return SIM_ERR_NOT_INITIALIZED;
     }
@@ -131,11 +131,11 @@ static SimStatus checkAddress(const Simulator *sim, unsigned int addr, int *page
     return SIM_OK;
 }
 
-SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
-    clearInfo(info);
+sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
+    clear_info(info);
 
     int page_index = 0;
-    SimStatus status = checkAddress(sim, addr, &page_index);
+    sim_status_t status = check_address(sim, addr, &page_index);
     if(status != SIM_OK){
         sim->stats.errors++;
         return status;
@@ -145,9 +145,9 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
     //reported as an int, so a legitimate 0xFF can never look like an error code.
     uint8_t cached_byte = 0;
     int hit_way = -1;
-    int hit = checkCache(sim->cache, addr, &cached_byte, &hit_way);
+    int hit = check_cache(sim->cache, addr, &cached_byte, &hit_way);
 
-    int set_index = getSetIndex(addr, sim->cache->num_sets);
+    int set_index = get_set_index(addr, sim->cache->num_sets);
 
     if(hit == 1){
         //counted here rather than on entry: an access that fails is an error and
@@ -172,29 +172,29 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
 
     //Miss: pull the whole block in from memory, choose a line for it, and fill it.
     uint8_t *block_data = NULL;
-    if(fetchBlockFromMemory(&sim->memory, addr, &block_data) != 0 || !block_data){
+    if(fetch_block_from_memory(&sim->memory, addr, &block_data) != 0 || !block_data){
         sim->stats.errors++;
         return SIM_ERR_OUT_OF_MEMORY;   //the address is already known to be in range
     }
 
-    Line *line = handleLineReplacement(sim->cache, addr, sim->config.replacement_policy);
+    line_t *line = handle_line_replacement(sim->cache, addr, sim->config.replacement_policy);
     if(!line){
         free(block_data);
         sim->stats.errors++;
         return SIM_ERR_NOT_INITIALIZED;
     }
 
-    //read before updateCache overwrites it: a line that already held valid data
+    //read before update_cache overwrites it: a line that already held valid data
     //is being displaced, which is the eviction worth counting. A fill into an
     //empty line is a cold miss and costs nobody their data.
     bool evicted = line->valid_bit;
 
-    Set *set = &sim->cache->cache_sets[set_index];
+    set_t *set = &sim->cache->cache_sets[set_index];
     int line_index = (int)(line - set->cache_lines);
 
-    updateCache(line, getTagBits(addr, sim->cache->num_sets), block_data);
+    update_cache(line, get_tag_bits(addr, sim->cache->num_sets), block_data);
 
-    int fetched_byte = block_data[getBlockOffset(addr)];
+    int fetched_byte = block_data[get_block_offset(addr)];
     free(block_data);
 
     sim->stats.reads++;
@@ -217,38 +217,38 @@ SimStatus simRead(Simulator *sim, unsigned int addr, AccessInfo *info){
     return SIM_OK;
 }
 
-SimStatus simWrite(Simulator *sim, unsigned int addr, uint8_t value, AccessInfo *info){
-    clearInfo(info);
+sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, access_info_t *info){
+    clear_info(info);
 
     int page_index = 0;
-    SimStatus status = checkAddress(sim, addr, &page_index);
+    sim_status_t status = check_address(sim, addr, &page_index);
     if(status != SIM_OK){
         sim->stats.errors++;
         return status;
     }
 
     int hit_way = -1;
-    int hit = checkCache(sim->cache, addr, NULL, &hit_way);   //already resident?
+    int hit = check_cache(sim->cache, addr, NULL, &hit_way);   //already resident?
     bool new_page = (sim->memory.page_table[page_index] == NULL);
 
     //write-through: every write reaches main memory. Memory goes first so a
     //rejected address cannot leave a cache line holding a byte that main memory
     //never accepted.
-    if(writeToMemory(&sim->memory, addr, value) != 1){
+    if(write_to_memory(&sim->memory, addr, value) != 1){
         sim->stats.errors++;
         return SIM_ERR_OUT_OF_MEMORY;   //the address is already known to be in range
     }
 
-    int set_index = getSetIndex(addr, sim->cache->num_sets);
+    int set_index = get_set_index(addr, sim->cache->num_sets);
     int line_index = -1;
 
     //no-write-allocate: the cache is touched only when the address is already
     //resident. A miss does not pull the block in.
     if(hit == 1){
-        //checkCache located the line and said which way held it, so the byte goes
+        //check_cache located the line and said which way held it, so the byte goes
         //straight there instead of searching the set for the same tag a second time
-        Line *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
-        line->block[getBlockOffset(addr)] = value;
+        line_t *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
+        line->block[get_block_offset(addr)] = value;
         line->last_access_time = global_time++;
         line_index = hit_way;
     }
@@ -274,6 +274,6 @@ SimStatus simWrite(Simulator *sim, unsigned int addr, uint8_t value, AccessInfo 
     return SIM_OK;
 }
 
-int simCacheSize(const Simulator *sim){
+int sim_cache_size(const simulator_t *sim){
     return sim->config.num_sets * sim->config.lines_per_set * BLOCK_SIZE;
 }

@@ -19,7 +19,7 @@ unsigned int global_time = 0;
  * Iterate over all sets, initalize the valid bit, tag bits, data block and
  * the last access times for all lines within the same.
  */
-int initializeSets(Set *sets, int num_sets, int lines_per_set)
+int initialize_sets(set_t *sets, int num_sets, int lines_per_set)
 {
     //every set starts empty, so a caller unwinding a partial failure can free
     //the whole array without reading an uninitialized pointer
@@ -32,7 +32,7 @@ int initializeSets(Set *sets, int num_sets, int lines_per_set)
     // outer loop initializes each set
     for (int i = 0; i < num_sets; i++)
     {
-        sets[i].cache_lines = (Line *)malloc(lines_per_set * sizeof(Line));
+        sets[i].cache_lines = (line_t *)malloc(lines_per_set * sizeof(line_t));
         if (!sets[i].cache_lines)
         {
             return -1;
@@ -53,23 +53,23 @@ int initializeSets(Set *sets, int num_sets, int lines_per_set)
 
 /*
     Given a configuration object(struct lol), initialize the cache by initializing all the sets
-    in the same by calling initializeSets().
+    in the same by calling initialize_sets().
 */
 /**
- * @brief Initialize the Cache structure based on user input from the Config struct.
+ * @brief Initialize the cache_t structure based on user input from the config_t struct.
  *
- * @param config a pointer to the Config structure
- * @returns cache: a pointer to the initialized Cache structure
+ * @param config a pointer to the config_t structure
+ * @returns cache: a pointer to the initialized cache_t structure
  *
- * Initialize the num_sets and lines_per_set fields and then inialize all Sets by calling initializeSets().
+ * Initialize the num_sets and lines_per_set fields and then inialize all Sets by calling initialize_sets().
  */
-Cache *initializeCache(Config *config)
+cache_t *initialize_cache(config_t *config)
 {
-    //simInit validates the configuration and can name the setting at fault.
+    //sim_init validates the configuration and can name the setting at fault.
     //This guard only refuses an unusable one, so that a caller reaching straight
     //for the cache still cannot build a shape the address decoding cannot
-    //describe: getSetIndex masks address bits, which only computes
-    //blockNumber % num_sets when num_sets is a power of two. Any other value
+    //describe: get_set_index masks address bits, which only computes
+    //block_number % num_sets when num_sets is a power of two. Any other value
     //leaves an address bit in neither the set index nor the tag, so two
     //different blocks share a (set, tag) label and alias onto each other's data.
     //n & (n-1) clears the lowest set bit: zero means only one bit was set.
@@ -81,7 +81,7 @@ Cache *initializeCache(Config *config)
         return NULL;
     }
 
-    Cache *cache = (Cache *)malloc(sizeof(Cache));
+    cache_t *cache = (cache_t *)malloc(sizeof(cache_t));
     if (!cache)
     {
         return NULL;
@@ -89,7 +89,7 @@ Cache *initializeCache(Config *config)
     cache->num_sets = config->num_sets;
     cache->lines_per_set = config->lines_per_set;
 
-    Set *sets = (Set *)malloc(cache->num_sets * sizeof(Set));
+    set_t *sets = (set_t *)malloc(cache->num_sets * sizeof(set_t));
     if (!sets)
     {
         free(cache);
@@ -99,11 +99,11 @@ Cache *initializeCache(Config *config)
     cache->cache_sets = sets;
 
     // initialize all sets
-    if (initializeSets(cache->cache_sets, cache->num_sets, cache->lines_per_set) != 0)
+    if (initialize_sets(cache->cache_sets, cache->num_sets, cache->lines_per_set) != 0)
     {
-        //freeCache walks every set, and initializeSets NULLed the ones it never
+        //free_cache walks every set, and initialize_sets NULLed the ones it never
         //reached, so the partial cache is released the same way a whole one is
-        freeCache(cache);
+        free_cache(cache);
         return NULL;
     }
     return cache;
@@ -115,7 +115,7 @@ Cache *initializeCache(Config *config)
  * @param addr The address for which the set index is to be calculated.
  * @param num_sets The number of sets in the cache
  */
-int getSetIndex(unsigned int addr, int num_sets)
+int get_set_index(unsigned int addr, int num_sets)
 {
     // right shift 5 bits to get rid of block offset bits
     // Then isolate set bits.
@@ -127,7 +127,7 @@ int getSetIndex(unsigned int addr, int num_sets)
  *
  * @param addr The address of which the offset is to be calculated
  */
-int getBlockOffset(unsigned int addr)
+int get_block_offset(unsigned int addr)
 {
     // 32 bytes/line => 5 bits to represent
     return addr & BLOCK_MASK;
@@ -142,7 +142,7 @@ int getBlockOffset(unsigned int addr)
  * floating point log2() would have to be truncated back to an int and any
  * platform returning 2.9999.. for log2(8) would silently size the field wrong.
  */
-int setIndexBits(int num_sets)
+int set_index_bits(int num_sets)
 {
     int bits = 0;
     while (num_sets > 1)
@@ -159,22 +159,22 @@ int setIndexBits(int num_sets)
  * @param addr the address from which the tag bits are to be calculated
  * @param num_sets number of sets in the cache
  */
-int getTagBits(unsigned int addr, int num_sets)
+int get_tag_bits(unsigned int addr, int num_sets)
 {
-    return addr >> (BLOCK_OFFSET_BITS + setIndexBits(num_sets));
+    return addr >> (BLOCK_OFFSET_BITS + set_index_bits(num_sets));
 }
 
 /**
  * In case of a cache miss, fetch the line of data from memory
  * and populate the said block
  */
-// void handleCacheMiss(int addr, Line *line, int tagbits){
+// void handle_cache_miss(int addr, line_t *line, int tagbits){
 //     line->valid_bit = true;
 //     line->tag = tagbits;
 
 //     int block_start_address = addr & ~31;
 //     for (int i = 0; i < 32; i++) {       // 32 bytes per block
-//         line->block[i] = readFromMemory(memory, block_start_address + i);
+//         line->block[i] = read_from_memory(memory, block_start_address + i);
 //     }
 //     printf("Loaded block from main memory to cache\n");
 
@@ -193,23 +193,23 @@ int getTagBits(unsigned int addr, int num_sets)
  *      - -1: Error
  * 
  */
-int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data, int *out_way){
+int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_way){
     if(!cache || !cache->cache_sets){
         return -1;
     }
 
-    int set_index = getSetIndex(addr, cache->num_sets);
-    int tag_bits = getTagBits(addr, cache->num_sets);
-    int block_offset = getBlockOffset(addr);
+    int set_index = get_set_index(addr, cache->num_sets);
+    int tag_bits = get_tag_bits(addr, cache->num_sets);
+    int block_offset = get_block_offset(addr);
 
 
-    Set *cur_set = &(cache->cache_sets[set_index]);
+    set_t *cur_set = &(cache->cache_sets[set_index]);
 
     // Check all lines in the set for a hit
     for (int i = 0; i < cur_set->lines_per_set; i++) {
-        Line *line = &cur_set->cache_lines[i];
+        line_t *line = &cur_set->cache_lines[i];
 
-        //tag is unsigned while getTagBits returns int; cast so the comparison
+        //tag is unsigned while get_tag_bits returns int; cast so the comparison
         //is not done in unsigned arithmetic behind the reader's back
         if (cur_set->cache_lines[i].valid_bit && cur_set->cache_lines[i].tag == (unsigned int)tag_bits) {
             // Cache hit: Retrieve the data at the block offset
@@ -238,13 +238,13 @@ int checkCache(Cache *cache, unsigned int addr, uint8_t* out_data, int *out_way)
  * @param addr The memory address being accessed.
  * @param policy Which line a full set gives up (POLICY_LRU, POLICY_RANDOM).
  * 
- * @returns *Line: pointer to the line to be replaced/updated
+ * @returns *line_t: pointer to the line to be replaced/updated
  */
-Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy policy){
+line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_policy_t policy){
 
-    int set_index = getSetIndex(addr, cache->num_sets);
+    int set_index = get_set_index(addr, cache->num_sets);
 
-    Set *cur_set = &(cache->cache_sets[set_index]);
+    set_t *cur_set = &(cache->cache_sets[set_index]);
     
     // Find an empty line: nothing has to be evicted to make room
     for (int i = 0; i < cur_set->lines_per_set; i++) {
@@ -258,8 +258,8 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy p
     // Apply replacement policy. No default case: -Wswitch then warns here if a
     // policy is added to the enum and this switch is not updated.
     switch (policy) {
-        case POLICY_LRU:    return leastRecentlyUsed(cur_set);
-        case POLICY_RANDOM: return randomReplacement(cur_set);
+        case POLICY_LRU:    return least_recently_used(cur_set);
+        case POLICY_RANDOM: return random_replacement(cur_set);
     }
 
     return NULL;
@@ -269,13 +269,13 @@ Line *handleLineReplacement(Cache *cache, unsigned int addr, ReplacementPolicy p
 /**
  * @brief Given a set, find the line to be removed using the Least Recently used policy.
  *
- * @param set a pointer to the Set
- * To do so, we make use of 'last_access_time' field of each Line, and select the one with the
+ * @param set a pointer to the set_t
+ * To do so, we make use of 'last_access_time' field of each line_t, and select the one with the
  * least value.
  */
-Line *leastRecentlyUsed(Set *set)
+line_t *least_recently_used(set_t *set)
 {
-    Line *lru_line = &set->cache_lines[0];
+    line_t *lru_line = &set->cache_lines[0];
     for (int i = 1; i < set->lines_per_set; i++)
     {
         if (set->cache_lines[i].last_access_time < lru_line->last_access_time)
@@ -287,11 +287,11 @@ Line *leastRecentlyUsed(Set *set)
 }
 
 /**
- * @brief Given a set, return the Line to be evicted randomly.
+ * @brief Given a set, return the line_t to be evicted randomly.
  *
- * @param set a pointer to the Set
+ * @param set a pointer to the set_t
  */
-Line *randomReplacement(Set *set)
+line_t *random_replacement(set_t *set)
 {
     // this runs if an empty line wasn't found
     int line_to_replace_index = rand() % set->lines_per_set;
@@ -299,7 +299,7 @@ Line *randomReplacement(Set *set)
 }
 
 /**
- * @brief Update a given Line with the provided tag bits and the clock of data.
+ * @brief Update a given line_t with the provided tag bits and the clock of data.
  *
  * @param line pointer to the line to be updated
  * @param the the value which the tag bits are to be set to
@@ -308,9 +308,9 @@ Line *randomReplacement(Set *set)
  *
  * Used after cache hit/miss to keep it consistent with the main memory.
  */
-void updateCache(Line *line, int tag_bits, const uint8_t *block_data)
+void update_cache(line_t *line, int tag_bits, const uint8_t *block_data)
 {
-    // Line *line = &(cache->cache_sets[set_index].cache_lines);
+    // line_t *line = &(cache->cache_sets[set_index].cache_lines);
     line->valid_bit = true;
     line->tag = tag_bits;
     line->last_access_time = global_time++; // update to current time
@@ -322,15 +322,15 @@ void updateCache(Line *line, int tag_bits, const uint8_t *block_data)
 }
 
 /**
- * @brief Frees all memory occupied by the Cache structure.
+ * @brief Frees all memory occupied by the cache_t structure.
  *
- * @param memory A pointer to the Cache structure to free.
+ * @param memory A pointer to the cache_t structure to free.
  *
  * The function fress all Sets and Lines.
- * After calling this, the Cache structure will be in an
+ * After calling this, the cache_t structure will be in an
  * uninitialized state.
  */
-void freeCache(Cache *cache)
+void free_cache(cache_t *cache)
 {
     if (!cache)
         return; // Ensure the cache pointer is valid
@@ -338,7 +338,7 @@ void freeCache(Cache *cache)
     // Free the array of sets
     for (int i = 0; i < cache->num_sets; i++)
     {
-        Set *set = &(cache->cache_sets[i]);
+        set_t *set = &(cache->cache_sets[i]);
         if (set->cache_lines)
         {
             free(set->cache_lines);
