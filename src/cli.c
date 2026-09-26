@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void setOptionDefaults(Options *opts){
+void set_option_defaults(options_t *opts){
     opts->mode = MODE_NONE;
     opts->config_path = DEFAULT_CONFIG_PATH;
     opts->config_path_given = false;
@@ -18,7 +18,7 @@ void setOptionDefaults(Options *opts){
  * @return const char* the text after the '=', or NULL if this argument is not
  *         that option written in the attached form
  */
-static const char *attachedValue(const char *arg, const char *name){
+static const char *attached_value(const char *arg, const char *name){
     size_t len = strlen(name);
     if(strncmp(arg, name, len) == 0 && arg[len] == '='){
         return arg + len + 1;
@@ -27,8 +27,8 @@ static const char *attachedValue(const char *arg, const char *name){
 }
 
 //True if arg is this option, written either on its own or with a value attached.
-static bool isOption(const char *arg, const char *name){
-    return strcmp(arg, name) == 0 || attachedValue(arg, name) != NULL;
+static bool is_option(const char *arg, const char *name){
+    return strcmp(arg, name) == 0 || attached_value(arg, name) != NULL;
 }
 
 /**
@@ -40,24 +40,24 @@ static bool isOption(const char *arg, const char *name){
  * Accepting both "--config x" and "--config=x" costs one branch and spares the
  * user having to remember which form this program wanted.
  */
-static const char *optionValue(int argc, char **argv, int *i, const char *name){
-    const char *attached = attachedValue(argv[*i], name);
+static const char *option_value(int argc, char **argv, int *i, const char *name){
+    const char *attached = attached_value(argv[*i], name);
     if(attached){
         if(*attached == '\0'){
-            logError("Error: %s needs a value, as in '%s=config.txt'\n", name, name);
+            log_error("Error: %s needs a value, as in '%s=config.txt'\n", name, name);
             return NULL;
         }
         return attached;
     }
     if(*i + 1 >= argc){
-        logError("Error: %s needs a value, as in '%s config.txt'\n", name, name);
+        log_error("Error: %s needs a value, as in '%s config.txt'\n", name, name);
         return NULL;
     }
     (*i)++;
     return argv[*i];
 }
 
-int parseArgs(int argc, char **argv, Options *opts){
+int parse_args(int argc, char **argv, options_t *opts){
     for(int i = 1; i < argc; i++){
         const char *arg = argv[i];
 
@@ -85,8 +85,8 @@ int parseArgs(int argc, char **argv, Options *opts){
             continue;
         }
 
-        if(isOption(arg, "--config")){
-            const char *value = optionValue(argc, argv, &i, "--config");
+        if(is_option(arg, "--config")){
+            const char *value = option_value(argc, argv, &i, "--config");
             if(!value){
                 return -1;
             }
@@ -98,18 +98,18 @@ int parseArgs(int argc, char **argv, Options *opts){
         //a bare word is what a trace file will look like, so say that plainly
         //rather than calling it an unknown option
         if(arg[0] != '-'){
-            logError("Error: trace files are not supported yet ('%s'). "
+            log_error("Error: trace files are not supported yet ('%s'). "
                      "Use --interactive for now.\n", arg);
             return -1;
         }
 
-        logError("Error: unknown option '%s'\n", arg);
+        log_error("Error: unknown option '%s'\n", arg);
         return -1;
     }
     return 0;
 }
 
-void printUsage(const char *program){
+void print_usage(const char *program){
     const char *name = program ? program : "cache_sim";
 
     printf("Usage: %s --interactive [options]\n", name);

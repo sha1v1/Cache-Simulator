@@ -8,17 +8,17 @@
 /**
  * @brief Initialize the Main memory Structure with user provided configuration.
  * 
- * @param memory A pointer to the Memory structure.
- * @param config A pointer to the Config structure
+ * @param memory A pointer to the memory_t structure.
+ * @param config A pointer to the config_t structure
  * 
  * Sets the total memory size, page size, calculates number of pages required. It also allocates memory for
  * the page_table which is essentially an array of pointers to all these pages. These pointers are
  * initialized to NULL.
  */
-int initializeMemory(Memory *memory, Config *config){
-    //fetchBlockFromMemory aligns down to a block boundary and always reads
+int initialize_memory(memory_t *memory, config_t *config){
+    //fetch_block_from_memory aligns down to a block boundary and always reads
     //BLOCK_SIZE bytes, so a memory that doesn't end on a block boundary would
-    //have its last block run past the end and store readFromMemory's error
+    //have its last block run past the end and store read_from_memory's error
     //returns as if they were data.
     if (config->main_memory_size <= 0 || config->main_memory_size % BLOCK_SIZE != 0) {
         return -1;
@@ -40,7 +40,7 @@ int initializeMemory(Memory *memory, Config *config){
 /**
  * @brief Allocates (initializes) a memory page at the specified index.
  *
- * @param memory A pointer to the Memory structure.
+ * @param memory A pointer to the memory_t structure.
  * @param page_index The index of the page to allocate.
  * @return int Returns:
  *              - 1 if the page was successfully allocated or already exists.
@@ -51,7 +51,7 @@ int initializeMemory(Memory *memory, Config *config){
  * Checks if the page has already been allocated. If not,
  * it dynamically allocates the page and populates it with random non-zero values.
  */
-int allocatePage(Memory *memory, int page_index) {
+int allocate_page(memory_t *memory, int page_index) {
     //check if memory has been initiliazed
     if(!memory || !memory->page_table){
         return -1;
@@ -81,13 +81,13 @@ int allocatePage(Memory *memory, int page_index) {
 
 /**
  * @brief Given a memory address, it returns the value at the said address.
- * @param memory A pointer to the Memory struct
+ * @param memory A pointer to the memory_t struct
  * @param address The address to read from
  * 
  * cacluate the page and offset from the given address. If the page hasn't been allocated (initialized),
  * it is dynamically polulated with random values and the value at the given address is returned. 
 */
-int readFromMemory(Memory *memory, int address){
+int read_from_memory(memory_t *memory, int address){
     if(!memory || !memory->page_table){
         return -1;
     }
@@ -100,7 +100,7 @@ int readFromMemory(Memory *memory, int address){
     }
 
     //populate page if this is the first time an address from this page has been accessed
-    if (allocatePage(memory, page_idx) != 1) {
+    if (allocate_page(memory, page_idx) != 1) {
         return -1;
     }
 
@@ -118,7 +118,7 @@ int readFromMemory(Memory *memory, int address){
  * Calculate the page index and offset from the address. If page hasn't been allocated (initialized) yet,
  * it is loaded with random values and the memory address is then written to with the provided value.
  */
-int writeToMemory(Memory *memory, int address, uint8_t value){
+int write_to_memory(memory_t *memory, int address, uint8_t value){
     if(!memory || !memory->page_table){
         return 0;
     }
@@ -133,7 +133,7 @@ int writeToMemory(Memory *memory, int address, uint8_t value){
     //bring the page into existence the same way a read does. Allocating it here
     //without populating it would leave every other byte on the page holding
     //whatever malloc returned, which nothing in the program ever decided.
-    if (allocatePage(memory, page_idx) != 1) {
+    if (allocate_page(memory, page_idx) != 1) {
         return 0;
     }
     memory->page_table[page_idx][offset] = value;
@@ -144,7 +144,7 @@ int writeToMemory(Memory *memory, int address, uint8_t value){
 /**
  * @brief fetches a block of data (cache line) from memory.
  * 
- * @param memory A pointer to the Memory structure
+ * @param memory A pointer to the memory_t structure
  * @param addr The address that triggered the fetching of the data block
  * @returns block_data: An array of exactly BLOCK_SIZE raw bytes. It is NOT
  *          NUL-terminated - every byte is data, so callers must use
@@ -153,10 +153,10 @@ int writeToMemory(Memory *memory, int address, uint8_t value){
  * Figure out the starting address of the block from the given address and fetch 32 bytes of data
  * from the computed address. In case the page hasn't been allocated yet, initialize it first.
  */
-int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t** block_data) {
+int fetch_block_from_memory(memory_t *memory, unsigned int addr, uint8_t** block_data) {
     //guard before dereferencing, as every other function in this file does.
-    //Without this a half-built Memory (size set, page_table still NULL) passes
-    //the bounds check and the loop below fills the block with readFromMemory's
+    //Without this a half-built memory_t (size set, page_table still NULL) passes
+    //the bounds check and the loop below fills the block with read_from_memory's
     //error returns, reporting success while handing back 32 bytes of nothing.
     if(!memory || !memory->page_table){
         return -1;
@@ -166,7 +166,7 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t** block_data
         return -1;
     }
 
-    //total_size is validated positive in initializeMemory, so the cast is safe
+    //total_size is validated positive in initialize_memory, so the cast is safe
     //and keeps this from being a signed/unsigned comparison
     if(addr >= (unsigned int)memory->total_size){
         return -1;
@@ -182,10 +182,10 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t** block_data
     //offsets 0..BLOCK_SIZE-1 are all addressable, so reserving the last byte
     //for a '\0' would silently destroy the byte the caller asked for.
     for (int i = 0; i < BLOCK_SIZE; i++) {
-        //readFromMemory returns a byte as 0..255 and any failure as a negative
+        //read_from_memory returns a byte as 0..255 and any failure as a negative
         //value, so the two can be told apart here rather than storing an error
         //code into the block as if it were data.
-        int value = readFromMemory(memory, block_start_addr + i);
+        int value = read_from_memory(memory, block_start_addr + i);
         if (value < 0) {
             free(*block_data);
             *block_data = NULL;
@@ -196,15 +196,15 @@ int fetchBlockFromMemory(Memory *memory, unsigned int addr, uint8_t** block_data
     return 0; // for success
 }
 /**
- * @brief Frees all memory occupied by the Memory structure.
+ * @brief Frees all memory occupied by the memory_t structure.
  *
- * @param memory A pointer to the Memory structure to free.
+ * @param memory A pointer to the memory_t structure to free.
  *
  * This function frees all allocated pages and the page table itself.
- * After calling this, the Memory structure will be in an
+ * After calling this, the memory_t structure will be in an
  * uninitialized state.
  */
-void freeMemory(Memory *memory){
+void free_memory(memory_t *memory){
     if (!memory || !memory->page_table) {
         return;
     }

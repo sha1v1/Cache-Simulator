@@ -12,14 +12,14 @@
 #define DEFAULT_LINES_PER_SET    2
 #define DEFAULT_POLICY           POLICY_LRU
 
-void setConfigDefaults(Config *config){
+void set_config_defaults(config_t *config){
     config->num_sets = DEFAULT_NUM_SETS;
     config->main_memory_size = DEFAULT_MAIN_MEMORY_SIZE;
     config->lines_per_set = DEFAULT_LINES_PER_SET;
     config->replacement_policy = DEFAULT_POLICY;
 }
 
-const char *policyName(ReplacementPolicy policy){
+const char *policy_name(replacement_policy_t policy){
     //No default case: -Wswitch then warns here if a policy is added to the enum
     //and this function is not updated.
     switch(policy){
@@ -29,7 +29,7 @@ const char *policyName(ReplacementPolicy policy){
     return "UNKNOWN";
 }
 
-int parsePolicy(const char *name, ReplacementPolicy *out){
+int parse_policy(const char *name, replacement_policy_t *out){
     if(strcasecmp(name, "LRU") == 0){
         *out = POLICY_LRU;
         return 0;
@@ -68,7 +68,7 @@ static char *trim(char *s){
  * Kept to one short phrase with no path or line prefix: the caller knows where
  * the text came from and how it wants to introduce it.
  */
-static void setError(char *error, size_t error_size, const char *fmt, ...){
+static void set_error(char *error, size_t error_size, const char *fmt, ...){
     if(!error || error_size == 0){
         return;
     }
@@ -78,7 +78,7 @@ static void setError(char *error, size_t error_size, const char *fmt, ...){
     va_end(args);
 }
 
-int readConfigFile(Config *config, const char *path, char *error, size_t error_size){
+int read_config_file(config_t *config, const char *path, char *error, size_t error_size){
     FILE* config_file = fopen(path, "r");
     if(!config_file){
         return -1;
@@ -103,7 +103,7 @@ int readConfigFile(Config *config, const char *path, char *error, size_t error_s
         //without this check a failed parse would leave key and value unset,
         //and every branch below would then read uninitialized memory
         if(sscanf(line, "%63[^=]=%63s", raw_key, raw_value) != 2){
-            setError(error, error_size, "malformed line: %s", line);
+            set_error(error, error_size, "malformed line: %s", line);
             status = -2;
             break;
         }
@@ -121,15 +121,15 @@ int readConfigFile(Config *config, const char *path, char *error, size_t error_s
             config->lines_per_set = atoi(value);
         }
         else if(strcmp(key, "replacement_policy") == 0){
-            if(parsePolicy(value, &config->replacement_policy) != 0){
-                setError(error, error_size,
+            if(parse_policy(value, &config->replacement_policy) != 0){
+                set_error(error, error_size,
                          "unknown replacement_policy '%s' (expected LRU or RANDOM)", value);
                 status = -2;
                 break;
             }
         }
         else{
-            setError(error, error_size, "unknown key '%s'", key);
+            set_error(error, error_size, "unknown key '%s'", key);
             status = -2;
             break;
         }

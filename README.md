@@ -185,8 +185,12 @@ main.c  cli.c  commands.c   front end: arguments, what to do, reading input
 | [src/memory.c](src/memory.c) | engine | paged main memory, allocated on first touch |
 | [src/config.c](src/config.c) | engine | defaults and the config file |
 
+Names are snake_case throughout: functions and variables plainly, types with a
+`_t` suffix so that a `cache_t *cache` or a `set_t *set` needs no contortion to
+avoid shadowing its own type. Enum constants and macros are the usual upper case.
+
 No engine file writes to stdout or stderr, or includes a header above it. An
-access returns a `SimStatus` and fills an `AccessInfo`; a run's totals are the
-public `Stats` struct. Whoever is driving decides what that means and how to say
+access returns a `sim_status_t` and fills an `access_info_t`; a run's totals are
+the public `stats_t` struct. Whoever is driving decides what that means and how to say
 it, which is what lets a second front end be added without touching the
 simulator.
