@@ -16,6 +16,7 @@ void set_config_defaults(config_t *config){
     config->num_sets = DEFAULT_NUM_SETS;
     config->main_memory_size = DEFAULT_MAIN_MEMORY_SIZE;
     config->lines_per_set = DEFAULT_LINES_PER_SET;
+    config->block_size = DEFAULT_BLOCK_SIZE;
     config->replacement_policy = DEFAULT_POLICY;
 }
 
@@ -119,6 +120,9 @@ int read_config_file(config_t *config, const char *path, char *error, size_t err
         }
         else if(strcmp(key, "lines_per_set") == 0){
             config->lines_per_set = atoi(value);
+        }
+        else if(strcmp(key, "block_size") == 0){
+            config->block_size = atoi(value);
         }
         else if(strcmp(key, "replacement_policy") == 0){
             if(parse_policy(value, &config->replacement_policy) != 0){

@@ -35,6 +35,7 @@ than guessing which front end was meant.
 | Option | Meaning |
 | --- | --- |
 | `-i`, `--interactive` | step through accesses one command at a time |
+| `--block-size N` | bytes per block; a power of two (default: 32) |
 | `--config PATH` | read settings from `PATH` instead of `config.txt` |
 | `-v`, `--verbose` | narrate the internals as well |
 | `-q`, `--quiet` | print only what was explicitly asked for |
@@ -85,8 +86,10 @@ Statistics
   errors      : 0
 ```
 
-Reading `0x104` hits because the miss on `0x100` brought in the whole 32-byte
-block around it, not just the byte asked for. `0x180` maps to the same set but
+Reading `0x104` hits because the miss on `0x100` brought in the whole block
+around it, not just the byte asked for. Widening `--block-size` widens that
+effect: at 64 bytes `0x120` would hit too, where at 32 it lands in another block
+and another set. `0x180` maps to the same set but
 carries a different tag, so it fills the set's other way; `0x200` is a third
 block competing for those two ways, so something has to go.
 
@@ -124,7 +127,13 @@ The program reads configuration settings from `config.txt`, defining cache and m
 - `num_sets`: Number of sets in the cache. Must be a power of two, because the
   set index is masked out of the address rather than computed with a modulo.
 - `main_memory_size`: Size of main memory in bytes. Must be a positive multiple
-  of the 32-byte block size, so the last block does not run past the end of memory.
+  of `block_size`, so the last block does not run past the end of memory. This
+  also rules out a memory smaller than a single block.
+- `block_size`: Bytes per block, and so the width of one cache line. Must be a
+  power of two, for the same reason as `num_sets`: the block offset is masked out
+  of an address rather than divided out of it, and only a power of two has a mask
+  that isolates the right bits. At 48 bytes, 47 is `0b101111` and the masking
+  would quietly return nonsense.
 - `lines_per_set`: Number of lines in each set in the cache. Any positive value;
   associativity is not encoded in the address, so it need not be a power of two.
 - `replacement_policy`: Defines the policy to replace line in case of conflicts.

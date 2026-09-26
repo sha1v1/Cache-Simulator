@@ -24,7 +24,8 @@ typedef enum {
     SIM_OK = 0,
     SIM_ERR_NUM_SETS,          //num_sets is not a positive power of two
     SIM_ERR_LINES_PER_SET,     //lines_per_set is not positive
-    SIM_ERR_MEMORY_SIZE,       //main_memory_size is not a positive multiple of BLOCK_SIZE
+    SIM_ERR_MEMORY_SIZE,       //main_memory_size is not a positive multiple of block_size
+    SIM_ERR_BLOCK_SIZE,        //block_size is not a positive power of two
     SIM_ERR_OUT_OF_MEMORY,     //an allocation failed
     SIM_ERR_ADDRESS_RANGE,     //the address lies outside main memory
     SIM_ERR_NOT_INITIALIZED    //the simulator was never successfully built

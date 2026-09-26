@@ -10,6 +10,7 @@ const char *sim_status_message(sim_status_t status){
         case SIM_ERR_NUM_SETS:        return "number of sets must be a positive power of two";
         case SIM_ERR_LINES_PER_SET:   return "lines per set must be positive";
         case SIM_ERR_MEMORY_SIZE:     return "main memory size must be a positive multiple of the block size";
+        case SIM_ERR_BLOCK_SIZE:      return "block size must be a positive power of two";
         case SIM_ERR_OUT_OF_MEMORY:   return "out of memory";
         case SIM_ERR_ADDRESS_RANGE:   return "address is outside main memory";
         case SIM_ERR_NOT_INITIALIZED: return "simulator is not initialized";
@@ -52,10 +53,15 @@ static sim_status_t validate_config(const config_t *config){
     if(config->lines_per_set <= 0){
         return SIM_ERR_LINES_PER_SET;
     }
+    //the block offset is masked out of an address, so only a power of two has a
+    //mask that isolates it - the same rule, and the same reason, as num_sets
+    if(config->block_size <= 0 || (config->block_size & (config->block_size - 1)) != 0){
+        return SIM_ERR_BLOCK_SIZE;
+    }
     //fetch_block_from_memory aligns down to a block boundary and always reads
-    //BLOCK_SIZE bytes, so a memory that doesn't end on one would have its last
-    //block run past the end.
-    if(config->main_memory_size <= 0 || config->main_memory_size % BLOCK_SIZE != 0){
+    //block_size bytes, so a memory that doesn't end on one would have its last
+    //block run past the end. A memory smaller than one block fails this too.
+    if(config->main_memory_size <= 0 || config->main_memory_size % config->block_size != 0){
         return SIM_ERR_MEMORY_SIZE;
     }
     return SIM_OK;
@@ -147,7 +153,7 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     int hit_way = -1;
     int hit = check_cache(sim->cache, addr, &cached_byte, &hit_way);
 
-    int set_index = get_set_index(addr, sim->cache->num_sets);
+    int set_index = get_set_index(&sim->cache->layout, addr);
 
     if(hit == 1){
         //counted here rather than on entry: an access that fails is an error and
@@ -192,9 +198,10 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     set_t *set = &sim->cache->cache_sets[set_index];
     int line_index = (int)(line - set->cache_lines);
 
-    update_cache(line, get_tag_bits(addr, sim->cache->num_sets), block_data);
+    update_cache(line, get_tag_bits(&sim->cache->layout, addr), block_data,
+                 sim->cache->layout.block_size);
 
-    int fetched_byte = block_data[get_block_offset(addr)];
+    int fetched_byte = block_data[get_block_offset(&sim->cache->layout, addr)];
     free(block_data);
 
     sim->stats.reads++;
@@ -239,7 +246,7 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
         return SIM_ERR_OUT_OF_MEMORY;   //the address is already known to be in range
     }
 
-    int set_index = get_set_index(addr, sim->cache->num_sets);
+    int set_index = get_set_index(&sim->cache->layout, addr);
     int line_index = -1;
 
     //no-write-allocate: the cache is touched only when the address is already
@@ -248,7 +255,7 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
         //check_cache located the line and said which way held it, so the byte goes
         //straight there instead of searching the set for the same tag a second time
         line_t *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
-        line->block[get_block_offset(addr)] = value;
+        line->block[get_block_offset(&sim->cache->layout, addr)] = value;
         line->last_access_time = global_time++;
         line_index = hit_way;
     }
@@ -275,5 +282,5 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
 }
 
 int sim_cache_size(const simulator_t *sim){
-    return sim->config.num_sets * sim->config.lines_per_set * BLOCK_SIZE;
+    return sim->config.num_sets * sim->config.lines_per_set * sim->config.block_size;
 }

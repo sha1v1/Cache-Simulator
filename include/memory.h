@@ -3,14 +3,6 @@
 #include "config.h"
 #include <stdint.h>
 
-//Bytes per cache block: the unit memory and cache exchange, and the size of
-//the data array in a cache line. Defined here because fetch_block_from_memory
-//produces blocks of exactly this size; cache.h includes this header.
-//Must be a power of two, since the block offset is masked out of an address.
-#define BLOCK_SIZE        32
-#define BLOCK_OFFSET_BITS 5                  //log2(BLOCK_SIZE)
-#define BLOCK_MASK        (BLOCK_SIZE - 1)   //keeps just the block offset bits
-
 typedef struct {
     uint8_t **page_table;  //Array of page pointers. Bytes, not text: uint8_t
                            //is unsigned everywhere, so a byte read back through
@@ -18,6 +10,9 @@ typedef struct {
                            //for a negative status code.
     int total_size;     // Total memory size in bytes
     int page_size;      // Size of each page in bytes
+    int block_size;     //bytes handed over per fetch: the unit memory and the
+                        //cache exchange. Copied from the configuration so a
+                        //fetch need not be told again on every call.
     int num_pages;      // Total number of pages
 } memory_t;
 

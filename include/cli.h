@@ -31,6 +31,9 @@ typedef struct {
     log_level_t log_level;
     bool log_level_given;      //true if -v/-q was passed, so a mode's own default
                                //applies only when the user expressed no preference
+    int block_size;            //bytes per block, when the command line says
+    bool block_size_given;     //true if it did, so the config file still has its
+                               //say when it did not
 } options_t;
 
 //Fills opts with what no arguments at all would mean.

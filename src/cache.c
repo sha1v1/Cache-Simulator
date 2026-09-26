@@ -19,7 +19,8 @@ unsigned int global_time = 0;
  * Iterate over all sets, initalize the valid bit, tag bits, data block and
  * the last access times for all lines within the same.
  */
-int initialize_sets(set_t *sets, int num_sets, int lines_per_set)
+int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
+                    uint8_t *block_arena, int block_size)
 {
     //every set starts empty, so a caller unwinding a partial failure can free
     //the whole array without reading an uninitialized pointer
@@ -41,10 +42,14 @@ int initialize_sets(set_t *sets, int num_sets, int lines_per_set)
         // now initialize each line within a set
         for (int j = 0; j < lines_per_set; j++)
         {
-            sets[i].cache_lines[j].valid_bit = false;
-            sets[i].cache_lines[j].tag = 0;
-            sets[i].cache_lines[j].last_access_time = 0;
-            memset(sets[i].cache_lines[j].block, 0, sizeof(sets[i].cache_lines[j].block));
+            line_t *line = &sets[i].cache_lines[j];
+            line->valid_bit = false;
+            line->tag = 0;
+            line->last_access_time = 0;
+            //each line's bytes are its own slice of the one arena, laid out set by
+            //set, so no line allocates or frees anything of its own
+            line->block = block_arena + ((size_t)i * lines_per_set + j) * block_size;
+            memset(line->block, 0, (size_t)block_size);
         }
     }
 
@@ -68,38 +73,51 @@ cache_t *initialize_cache(config_t *config)
     //sim_init validates the configuration and can name the setting at fault.
     //This guard only refuses an unusable one, so that a caller reaching straight
     //for the cache still cannot build a shape the address decoding cannot
-    //describe: get_set_index masks address bits, which only computes
-    //block_number % num_sets when num_sets is a power of two. Any other value
-    //leaves an address bit in neither the set index nor the tag, so two
-    //different blocks share a (set, tag) label and alias onto each other's data.
-    //n & (n-1) clears the lowest set bit: zero means only one bit was set.
+    //describe. address_layout_init is what enforces that: both the block size and
+    //the set count are masked out of an address, and any non power of two leaves
+    //an address bit in neither the set index nor the tag, so two different blocks
+    //share a (set, tag) label and alias onto each other's data.
+    address_layout_t layout;
     if (!config
-        || config->num_sets <= 0
-        || (config->num_sets & (config->num_sets - 1)) != 0
-        || config->lines_per_set <= 0)
+        || config->lines_per_set <= 0
+        || address_layout_init(&layout, config->block_size, config->num_sets) != 0)
     {
         return NULL;
     }
 
-    cache_t *cache = (cache_t *)malloc(sizeof(cache_t));
+    //calloc, so that every pointer free_cache might touch is NULL from the start
+    //and a failure part way through can be unwound by the same code that frees a
+    //whole cache
+    cache_t *cache = (cache_t *)calloc(1, sizeof(cache_t));
     if (!cache)
     {
         return NULL;
     }
     cache->num_sets = config->num_sets;
     cache->lines_per_set = config->lines_per_set;
+    cache->layout = layout;
 
-    set_t *sets = (set_t *)malloc(cache->num_sets * sizeof(set_t));
-    if (!sets)
+    cache->cache_sets = (set_t *)malloc((size_t)cache->num_sets * sizeof(set_t));
+    if (!cache->cache_sets)
     {
-        free(cache);
+        free_cache(cache);
         return NULL;
     }
 
-    cache->cache_sets = sets;
+    //one allocation for every line's bytes rather than num_sets * lines_per_set of
+    //them: a block is a fixed size and never moves, so there is nothing for a
+    //per-line allocation to buy, and this way the blocks are one free
+    cache->block_arena = (uint8_t *)calloc((size_t)cache->num_sets * cache->lines_per_set,
+                                           (size_t)layout.block_size);
+    if (!cache->block_arena)
+    {
+        free_cache(cache);
+        return NULL;
+    }
 
     // initialize all sets
-    if (initialize_sets(cache->cache_sets, cache->num_sets, cache->lines_per_set) != 0)
+    if (initialize_sets(cache->cache_sets, cache->num_sets, cache->lines_per_set,
+                        cache->block_arena, layout.block_size) != 0)
     {
         //free_cache walks every set, and initialize_sets NULLed the ones it never
         //reached, so the partial cache is released the same way a whole one is
@@ -110,58 +128,83 @@ cache_t *initialize_cache(config_t *config)
 }
 
 /**
- * @brief Given an address and number of sets, find the index of the set which the address maps to.
+ * @brief The set an address maps to.
  *
- * @param addr The address for which the set index is to be calculated.
- * @param num_sets The number of sets in the cache
+ * @param layout how this cache reads an address apart
+ * @param addr the address to place
+ *
+ * Shift the block offset away, then keep only the set bits.
  */
-int get_set_index(unsigned int addr, int num_sets)
+int get_set_index(const address_layout_t *layout, unsigned int addr)
 {
-    // right shift 5 bits to get rid of block offset bits
-    // Then isolate set bits.
-    return (addr >> BLOCK_OFFSET_BITS) & (num_sets - 1);
+    return (int)((addr >> layout->offset_bits) & layout->set_mask);
 }
 
 /**
- * @brief Given an address, find the block offset to store the data.
+ * @brief Which byte within its block an address refers to.
  *
- * @param addr The address of which the offset is to be calculated
+ * @param layout how this cache reads an address apart
+ * @param addr the address whose offset is wanted
  */
-int get_block_offset(unsigned int addr)
+int get_block_offset(const address_layout_t *layout, unsigned int addr)
 {
-    // 32 bytes/line => 5 bits to represent
-    return addr & BLOCK_MASK;
+    return (int)(addr & layout->offset_mask);
 }
 
 /**
- * @brief Number of address bits needed to index num_sets sets.
- *
- * @param num_sets number of sets in the cache; must be a power of two
+ * @brief Number of address bits needed to index n things, for a power-of-two n.
  *
  * Integer equivalent of log2(). Counting the shifts keeps this exact, where a
  * floating point log2() would have to be truncated back to an int and any
  * platform returning 2.9999.. for log2(8) would silently size the field wrong.
  */
-int set_index_bits(int num_sets)
+static int exact_log2(int n)
 {
     int bits = 0;
-    while (num_sets > 1)
+    while (n > 1)
     {
-        num_sets >>= 1;
+        n >>= 1;
         bits++;
     }
     return bits;
 }
 
-/**
- * @brief Given an address and the number of sets, get the tag bits.
- *
- * @param addr the address from which the tag bits are to be calculated
- * @param num_sets number of sets in the cache
- */
-int get_tag_bits(unsigned int addr, int num_sets)
+//True only for a positive power of two: n & (n-1) clears the lowest set bit, so
+//a zero result means that was the only bit set.
+static bool is_power_of_two(int n)
 {
-    return addr >> (BLOCK_OFFSET_BITS + set_index_bits(num_sets));
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+int address_layout_init(address_layout_t *layout, int block_size, int num_sets)
+{
+    if (!layout || !is_power_of_two(block_size) || !is_power_of_two(num_sets))
+    {
+        return -1;
+    }
+
+    layout->block_size  = block_size;
+    layout->num_sets    = num_sets;
+    layout->offset_bits = exact_log2(block_size);
+    layout->set_bits    = exact_log2(num_sets);
+    layout->tag_shift   = layout->offset_bits + layout->set_bits;
+    layout->offset_mask = (unsigned int)block_size - 1u;
+    layout->set_mask    = (unsigned int)num_sets - 1u;
+    return 0;
+}
+
+/**
+ * @brief Everything above the set field: what distinguishes blocks sharing a set.
+ *
+ * @param layout how this cache reads an address apart
+ * @param addr the address whose tag is wanted
+ *
+ * Unsigned, matching line_t.tag, so the comparison on a lookup needs no cast.
+ * tag_shift is precomputed, which is what keeps a log2 off the access path.
+ */
+unsigned int get_tag_bits(const address_layout_t *layout, unsigned int addr)
+{
+    return addr >> layout->tag_shift;
 }
 
 /**
@@ -198,9 +241,9 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
         return -1;
     }
 
-    int set_index = get_set_index(addr, cache->num_sets);
-    int tag_bits = get_tag_bits(addr, cache->num_sets);
-    int block_offset = get_block_offset(addr);
+    int set_index = get_set_index(&cache->layout, addr);
+    unsigned int tag_bits = get_tag_bits(&cache->layout, addr);
+    int block_offset = get_block_offset(&cache->layout, addr);
 
 
     set_t *cur_set = &(cache->cache_sets[set_index]);
@@ -209,9 +252,7 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
     for (int i = 0; i < cur_set->lines_per_set; i++) {
         line_t *line = &cur_set->cache_lines[i];
 
-        //tag is unsigned while get_tag_bits returns int; cast so the comparison
-        //is not done in unsigned arithmetic behind the reader's back
-        if (cur_set->cache_lines[i].valid_bit && cur_set->cache_lines[i].tag == (unsigned int)tag_bits) {
+        if (cur_set->cache_lines[i].valid_bit && cur_set->cache_lines[i].tag == tag_bits) {
             // Cache hit: Retrieve the data at the block offset
             if (out_data) {
                 *out_data = line->block[block_offset];
@@ -242,7 +283,7 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
  */
 line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_policy_t policy){
 
-    int set_index = get_set_index(addr, cache->num_sets);
+    int set_index = get_set_index(&cache->layout, addr);
 
     set_t *cur_set = &(cache->cache_sets[set_index]);
     
@@ -302,23 +343,26 @@ line_t *random_replacement(set_t *set)
  * @brief Update a given line_t with the provided tag bits and the clock of data.
  *
  * @param line pointer to the line to be updated
- * @param the the value which the tag bits are to be set to
+ * @param tag_bits the value the line's tag is to be set to
  * @param block_data the new data for the line: must point to at least
- *        BLOCK_SIZE readable bytes, all of which are copied.
+ *        block_size readable bytes, all of which are copied.
+ * @param block_size how many bytes that is
  *
  * Used after cache hit/miss to keep it consistent with the main memory.
  */
-void update_cache(line_t *line, int tag_bits, const uint8_t *block_data)
+void update_cache(line_t *line, unsigned int tag_bits, const uint8_t *block_data,
+                  int block_size)
 {
-    // line_t *line = &(cache->cache_sets[set_index].cache_lines);
     line->valid_bit = true;
     line->tag = tag_bits;
     line->last_access_time = global_time++; // update to current time
 
-    //block_data is BLOCK_SIZE raw bytes, not a string: copy a fixed count so a
+    //block_data is block_size raw bytes, not a string: copy a counted length so a
     //zero byte inside the block neither truncates the copy nor, in its absence,
-    //lets the copy run past the end of either buffer.
-    memcpy(line->block, block_data, sizeof(line->block));
+    //lets the copy run past the end of either buffer. The count is passed in
+    //because line->block is a pointer into the arena now, so sizeof would
+    //silently be the width of that pointer.
+    memcpy(line->block, block_data, (size_t)block_size);
 }
 
 /**
@@ -335,17 +379,25 @@ void free_cache(cache_t *cache)
     if (!cache)
         return; // Ensure the cache pointer is valid
 
-    // Free the array of sets
-    for (int i = 0; i < cache->num_sets; i++)
+    // Free the array of sets. Guarded, because initialize_cache unwinds through
+    // here and may not have got as far as allocating them.
+    if (cache->cache_sets)
     {
-        set_t *set = &(cache->cache_sets[i]);
-        if (set->cache_lines)
+        for (int i = 0; i < cache->num_sets; i++)
         {
-            free(set->cache_lines);
-            set->cache_lines = NULL;
+            set_t *set = &(cache->cache_sets[i]);
+            if (set->cache_lines)
+            {
+                free(set->cache_lines);
+                set->cache_lines = NULL;
+            }
         }
+        free(cache->cache_sets);
+        cache->cache_sets = NULL;
     }
 
-    free(cache->cache_sets);
+    //the blocks were one allocation, so they are one free, whatever became of
+    //the sets above
+    free(cache->block_arena);
     free(cache);
 }

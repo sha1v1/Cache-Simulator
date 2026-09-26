@@ -18,7 +18,9 @@ static command_status_t run_line(const char *text){
 void setUp(void) {
     /* LRU rather than RANDOM: eviction has to be predictable for a test to be
        able to assert which line was displaced. */
-    config_t config = {4, 1024, 2, POLICY_LRU};
+    config_t config = {.num_sets = 4, .main_memory_size = 1024,
+                       .lines_per_set = 2, .block_size = DEFAULT_BLOCK_SIZE,
+                       .replacement_policy = POLICY_LRU};
     /* the statistics are what these tests read, so keep the narration out of
        the test output */
     set_log_level(LOG_QUIET);
@@ -192,14 +194,39 @@ void test_bad_configuration_is_rejected(void) {
 
     /* the status says which setting was wrong, so a caller can name it without
        the engine having to print anything */
-    config_t not_power_of_two = {5, 1024, 2, POLICY_LRU};
+    /* designated throughout, so adding a field to config_t cannot quietly move a
+       value into the wrong setting and change what these cases are testing */
+    config_t base = {.num_sets = 4, .main_memory_size = 1024, .lines_per_set = 2,
+                     .block_size = DEFAULT_BLOCK_SIZE, .replacement_policy = POLICY_LRU};
+
+    config_t not_power_of_two = base;
+    not_power_of_two.num_sets = 5;
     TEST_ASSERT_EQUAL(SIM_ERR_NUM_SETS, sim_init(&bad, &not_power_of_two));
 
-    config_t unaligned_memory = {4, 1000, 2, POLICY_LRU};
+    config_t unaligned_memory = base;
+    unaligned_memory.main_memory_size = 1000;
     TEST_ASSERT_EQUAL(SIM_ERR_MEMORY_SIZE, sim_init(&bad, &unaligned_memory));
 
-    config_t no_lines = {4, 1024, 0, POLICY_LRU};
+    config_t no_lines = base;
+    no_lines.lines_per_set = 0;
     TEST_ASSERT_EQUAL(SIM_ERR_LINES_PER_SET, sim_init(&bad, &no_lines));
+
+    /* the block offset is masked out of an address, so a block size that is not a
+       power of two has no mask that isolates it */
+    config_t odd_block = base;
+    odd_block.block_size = 48;
+    TEST_ASSERT_EQUAL(SIM_ERR_BLOCK_SIZE, sim_init(&bad, &odd_block));
+
+    config_t no_block = base;
+    no_block.block_size = 0;
+    TEST_ASSERT_EQUAL(SIM_ERR_BLOCK_SIZE, sim_init(&bad, &no_block));
+
+    /* a memory smaller than a single block leaves the first fetch running off the
+       end, and is caught as an unaligned size rather than slipping through */
+    config_t memory_below_one_block = base;
+    memory_below_one_block.block_size = 64;
+    memory_below_one_block.main_memory_size = 32;
+    TEST_ASSERT_EQUAL(SIM_ERR_MEMORY_SIZE, sim_init(&bad, &memory_below_one_block));
 }
 
 int main(void) {
