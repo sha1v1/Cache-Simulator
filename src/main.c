@@ -60,6 +60,12 @@ int main(int argc, char **argv){
         return 1;
     }
 
+    //the command line has the last word: a flag overrides both the built-in
+    //defaults and whatever the config file said
+    if(opts.block_size_given){
+        config.block_size = opts.block_size;
+    }
+
     //sim_init validates the configuration and owns the cache and memory, so a
     //bad config stops here rather than part-way through the first access
     simulator_t sim;

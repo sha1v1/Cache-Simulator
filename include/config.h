@@ -6,6 +6,11 @@
 //The config file the simulator reads at startup.
 #define DEFAULT_CONFIG_PATH "config.txt"
 
+//Bytes per block when nothing says otherwise: the unit main memory and the cache
+//exchange. Lives here rather than beside the cache because it is a setting, and
+//config.c needs it to fill in a default.
+#define DEFAULT_BLOCK_SIZE 32
+
 //Which line a full set gives up on a miss.
 typedef enum {
     POLICY_LRU,      //evict the least recently used line
@@ -16,6 +21,9 @@ typedef struct {
     int num_sets;
     int main_memory_size;
     int lines_per_set;
+    //must be a power of two: the block offset is masked out of an address rather
+    //than divided out, and only a power of two has a mask
+    int block_size;
     //stored as enums rather than strings: the value is validated once while
     //parsing instead of on every eviction, and there is no fixed-size buffer
     //for an over-long config value to overflow

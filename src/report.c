@@ -8,7 +8,7 @@ void report_config(const simulator_t *sim){
     printf("\nConfiguration\n");
     printf("  sets              : %d\n", c->num_sets);
     printf("  lines per set     : %d\n", c->lines_per_set);
-    printf("  block size        : %d bytes\n", BLOCK_SIZE);
+    printf("  block size        : %d bytes\n", c->block_size);
     printf("  cache size        : %d bytes\n", sim_cache_size(sim));
     printf("  main memory       : %d bytes\n", c->main_memory_size);
     printf("  replacement policy: %s\n", policy_name(c->replacement_policy));
@@ -59,9 +59,10 @@ void report_cache(const cache_t *cache){
             printf("%3d | %4d | %5d | %7u | ", i, j, line->valid_bit, line->tag);
 
             //the block holds arbitrary bytes and has no terminator, so %s would
-            //read past the array. Print printable ASCII as-is and stand in a
-            //'.' for the rest, the way hexdump does.
-            for(size_t k = 0; k < sizeof(line->block); k++){
+            //read past it. Print printable ASCII as-is and stand in a '.' for the
+            //rest, the way hexdump does. The count comes from the layout: block is
+            //a pointer into the cache's arena, so sizeof would be its width.
+            for(int k = 0; k < cache->layout.block_size; k++){
                 uint8_t byte = line->block[k];
                 putchar((byte >= 32 && byte <= 126) ? byte : '.');
             }
@@ -104,17 +105,16 @@ static const char *quoted_char(int value, char *buf){
  * geometry actually in use.
  */
 static void report_address_fields(const simulator_t *sim, unsigned int addr){
-    int num_sets    = sim->config.num_sets;
-    int offset_bits = BLOCK_OFFSET_BITS;
-    int set_bits    = set_index_bits(num_sets);
-    int tag_bits    = (int)(sizeof(unsigned int) * CHAR_BIT) - set_bits - offset_bits;
+    const address_layout_t *layout = &sim->cache->layout;
+    int tag_bits = (int)(sizeof(unsigned int) * CHAR_BIT)
+                   - layout->set_bits - layout->offset_bits;
 
     log_info("  0x%X = tag 0x%X | set %d | offset %d   (%d|%d|%d bits)\n",
             addr,
-            (unsigned int)get_tag_bits(addr, num_sets),
-            get_set_index(addr, num_sets),
-            get_block_offset(addr),
-            tag_bits, set_bits, offset_bits);
+            get_tag_bits(layout, addr),
+            get_set_index(layout, addr),
+            get_block_offset(layout, addr),
+            tag_bits, layout->set_bits, layout->offset_bits);
 }
 
 void report_access(const simulator_t *sim, char op, unsigned int addr,
@@ -181,7 +181,7 @@ void report_access_detail(const simulator_t *sim, char op, unsigned int addr,
     //byte that was asked for, it fetches the whole block that byte sits in
     if(op == 'R' && info->result == ACCESS_MISS){
         log_verbose("  fetched all %d bytes of the block, not just the byte asked for\n",
-                   BLOCK_SIZE);
+                   sim->cache->layout.block_size);
     }
 }
 
@@ -194,9 +194,12 @@ void report_startup_error(sim_status_t status, const config_t *config){
         case SIM_ERR_LINES_PER_SET:
             log_error("Error: %s (got %d)\n", sim_status_message(status), config->lines_per_set);
             break;
+        case SIM_ERR_BLOCK_SIZE:
+            log_error("Error: %s (got %d)\n", sim_status_message(status), config->block_size);
+            break;
         case SIM_ERR_MEMORY_SIZE:
             log_error("Error: %s of %d (got %d)\n", sim_status_message(status),
-                     BLOCK_SIZE, config->main_memory_size);
+                     config->block_size, config->main_memory_size);
             break;
         default:
             log_error("Error: %s\n", sim_status_message(status));

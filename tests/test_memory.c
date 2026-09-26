@@ -9,6 +9,7 @@ config_t config;
 
 void setUp(void){
     config.main_memory_size = 1024;
+    config.block_size = DEFAULT_BLOCK_SIZE;
     initialize_memory(&memory, &config);
 }
 

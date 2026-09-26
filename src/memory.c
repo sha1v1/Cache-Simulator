@@ -17,14 +17,18 @@
  */
 int initialize_memory(memory_t *memory, config_t *config){
     //fetch_block_from_memory aligns down to a block boundary and always reads
-    //BLOCK_SIZE bytes, so a memory that doesn't end on a block boundary would
+    //block_size bytes, so a memory that doesn't end on a block boundary would
     //have its last block run past the end and store read_from_memory's error
     //returns as if they were data.
-    if (config->main_memory_size <= 0 || config->main_memory_size % BLOCK_SIZE != 0) {
+    if (config->block_size <= 0
+        || config->main_memory_size <= 0
+        || config->main_memory_size % config->block_size != 0) {
         return -1;
     }
 
     memory->total_size = config->main_memory_size;
+    //kept here so a fetch need not be told the size on every call
+    memory->block_size = config->block_size;
     memory->page_size = 256; //fixed page size
     memory->num_pages = (memory->total_size + memory->page_size - 1)/memory->page_size; //round up
 
@@ -146,18 +150,20 @@ int write_to_memory(memory_t *memory, int address, uint8_t value){
  * 
  * @param memory A pointer to the memory_t structure
  * @param addr The address that triggered the fetching of the data block
- * @returns block_data: An array of exactly BLOCK_SIZE raw bytes. It is NOT
- *          NUL-terminated - every byte is data, so callers must use
- *          BLOCK_SIZE rather than string functions.
+ * @returns block_data: An array of exactly memory->block_size raw bytes. It is
+ *          NOT NUL-terminated - every byte is data, so callers must use that
+ *          count rather than string functions.
  * 
- * Figure out the starting address of the block from the given address and fetch 32 bytes of data
- * from the computed address. In case the page hasn't been allocated yet, initialize it first.
+ * Figure out the starting address of the block from the given address and fetch a
+ * whole block from there. In case the page hasn't been allocated yet, initialize
+ * it first. A block may span pages, which costs nothing here: the fetch reads one
+ * byte at a time through read_from_memory, and that resolves the page each time.
  */
 int fetch_block_from_memory(memory_t *memory, unsigned int addr, uint8_t** block_data) {
     //guard before dereferencing, as every other function in this file does.
     //Without this a half-built memory_t (size set, page_table still NULL) passes
     //the bounds check and the loop below fills the block with read_from_memory's
-    //error returns, reporting success while handing back 32 bytes of nothing.
+    //error returns, reporting success while handing back a block of nothing.
     if(!memory || !memory->page_table){
         return -1;
     }
@@ -172,16 +178,19 @@ int fetch_block_from_memory(memory_t *memory, unsigned int addr, uint8_t** block
         return -1;
     }
 
-    int block_start_addr = addr & ~BLOCK_MASK;  // Align to block start
-    *block_data = malloc(BLOCK_SIZE * sizeof(char));
+    //complement an unsigned mask: on a signed one the result would depend on the
+    //int-to-unsigned conversion rather than saying plainly which bits survive
+    unsigned int offset_mask = (unsigned int)memory->block_size - 1u;
+    int block_start_addr = (int)(addr & ~offset_mask);  // Align to block start
+    *block_data = malloc((size_t)memory->block_size);
     if (!*block_data) {
         return -3; // Erroneous fetch attempt: malloc failed
     }
 
-    //every one of the BLOCK_SIZE bytes is data. No terminator is written:
-    //offsets 0..BLOCK_SIZE-1 are all addressable, so reserving the last byte
+    //every one of the block_size bytes is data. No terminator is written:
+    //offsets 0..block_size-1 are all addressable, so reserving the last byte
     //for a '\0' would silently destroy the byte the caller asked for.
-    for (int i = 0; i < BLOCK_SIZE; i++) {
+    for (int i = 0; i < memory->block_size; i++) {
         //read_from_memory returns a byte as 0..255 and any failure as a negative
         //value, so the two can be told apart here rather than storing an error
         //code into the block as if it were data.

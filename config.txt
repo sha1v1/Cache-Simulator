@@ -1,4 +1,5 @@
 num_sets=4
 main_memory_size=1024
 lines_per_set=2
+block_size=32
 replacement_policy=RANDOM
