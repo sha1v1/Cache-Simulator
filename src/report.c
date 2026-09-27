@@ -34,6 +34,16 @@ void report_stats(const stats_t *s){
     printf("  accesses    : %lu (%lu reads, %lu writes)\n", accesses, s->reads, s->writes);
     printf("  hits        : %lu (%.2f%%)\n", hits, hit_rate(hits, accesses));
     printf("  misses      : %lu (%.2f%%)\n", misses, hit_rate(misses, accesses));
+    //The three account for the read misses, which are the ones that filled a line.
+    //A write miss under no-write-allocate fills nothing, so it has no placement to
+    //attribute; saying which total they add up to keeps that from looking wrong.
+    printf("    compulsory: %lu\n", s->compulsory_misses);
+    printf("    capacity  : %lu\n", s->capacity_misses);
+    printf("    conflict  : %lu\n", s->conflict_misses);
+    if(s->write_misses > 0){
+        printf("    (of %lu read misses; %lu write misses filled nothing)\n",
+               s->read_misses, s->write_misses);
+    }
     printf("  read hits   : %lu / %lu (%.2f%%)\n",
            s->read_hits, s->reads, hit_rate(s->read_hits, s->reads));
     printf("  write hits  : %lu / %lu (%.2f%%)\n",
@@ -83,11 +93,12 @@ void report_csv(const simulator_t *sim, const char *name,
     double miss_rate = accesses == 0 ? 0.0 : (double)misses / (double)accesses;
 
     printf("trace,size,block,assoc,policy,seed,records,accesses,hits,misses,"
-           "miss_rate,evictions,errors,malformed\n");
-    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu\n",
+           "miss_rate,compulsory,capacity,conflict,evictions,errors,malformed\n");
+    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu\n",
            name, config_cache_size(c), c->block_size, c->lines_per_set,
            policy_name(c->replacement_policy), c->seed,
            trace->records, accesses, hits, misses, miss_rate,
+           s->compulsory_misses, s->capacity_misses, s->conflict_misses,
            s->evictions, s->errors, trace->malformed);
 }
 

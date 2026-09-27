@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "cache.h"
+#include "classify.h"
 #include "config.h"
 #include "memory.h"
 
@@ -53,6 +54,12 @@ typedef struct {
     unsigned long write_hits;
     unsigned long write_misses;
     unsigned long evictions;        //misses that had to displace a valid line
+    //Why the read misses missed. These three sum to read_misses, not to all
+    //misses: under no-write-allocate a write miss fills nothing, so there is no
+    //placement decision to attribute it to.
+    unsigned long compulsory_misses;
+    unsigned long capacity_misses;
+    unsigned long conflict_misses;
     unsigned long pages_allocated;  //memory pages brought into existence by an access
     unsigned long errors;           //accesses that failed, e.g. an out-of-range address
 } stats_t;
@@ -64,6 +71,9 @@ typedef struct {
     memory_t memory;
     cache_t *cache;
     stats_t  stats;
+    //the reference structures the three-way miss breakdown needs; owned here so
+    //they are reset and freed with the machine they describe
+    classifier_t classifier;
 } simulator_t;
 
 typedef enum {

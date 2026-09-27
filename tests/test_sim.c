@@ -229,6 +229,102 @@ void test_bad_configuration_is_rejected(void) {
     TEST_ASSERT_EQUAL(SIM_ERR_MEMORY_SIZE, sim_init(&bad, &memory_below_one_block));
 }
 
+/* 0x000, 0x080 and 0x100 all map to set 0 in a 4-set cache, which has 2 ways. The
+   first three are first sights of their blocks; the fourth is 0x000 coming back
+   after being evicted while six of the eight lines stood empty, so the room was
+   there and only the mapping denied it. */
+void test_breakdown_names_a_conflict_miss(void) {
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x000, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x080, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x100, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x000, NULL));
+
+    TEST_ASSERT_EQUAL(4, sim.stats.read_misses);
+    TEST_ASSERT_EQUAL(3, sim.stats.compulsory_misses);
+    TEST_ASSERT_EQUAL(0, sim.stats.capacity_misses);
+    TEST_ASSERT_EQUAL(1, sim.stats.conflict_misses);
+}
+
+/* The three kinds have to account for exactly the read misses: a miss that went
+   uncounted, or counted twice, would make the breakdown quietly wrong while every
+   individual number still looked plausible. */
+void test_breakdown_accounts_for_every_read_miss(void) {
+    for(unsigned int addr = 0; addr < 0x300; addr += 0x20) {
+        TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, addr, NULL));
+    }
+    for(unsigned int addr = 0; addr < 0x300; addr += 0x20) {
+        TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, addr, NULL));
+    }
+
+    TEST_ASSERT_EQUAL(sim.stats.read_misses,
+                      sim.stats.compulsory_misses
+                      + sim.stats.capacity_misses
+                      + sim.stats.conflict_misses);
+}
+
+/* A fully associative cache cannot have a conflict miss: any block may sit in any
+   way, so nothing is ever evicted for being in the wrong place. Whatever is left
+   once the first sight of each block is accounted for is capacity. */
+void test_fully_associative_cache_has_no_conflict_misses(void) {
+    sim_free(&sim);
+    config_t config = {.num_sets = 1, .main_memory_size = 1024,
+                       .lines_per_set = 8, .block_size = DEFAULT_BLOCK_SIZE,
+                       .replacement_policy = POLICY_LRU};
+    TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+    /* twelve distinct blocks into a cache that holds eight */
+    for(unsigned int block = 0; block < 12; block++) {
+        TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, block * 0x20, NULL));
+    }
+    /* the first one has been displaced by now, and no mapping is to blame */
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x000, NULL));
+
+    TEST_ASSERT_EQUAL(12, sim.stats.compulsory_misses);
+    TEST_ASSERT_EQUAL(1, sim.stats.capacity_misses);
+    TEST_ASSERT_EQUAL(0, sim.stats.conflict_misses);
+}
+
+/* Compulsory misses are a property of the workload, not of the cache: every
+   distinct block has to be fetched once whatever the shape around it. Three very
+   different geometries of the same capacity must agree on the count. */
+void test_compulsory_count_does_not_depend_on_the_geometry(void) {
+    const int ways[] = {1, 2, 8};
+    unsigned long counts[3];
+
+    for(int i = 0; i < 3; i++) {
+        sim_free(&sim);
+        config_t config = {.num_sets = 8 / ways[i], .main_memory_size = 1024,
+                           .lines_per_set = ways[i], .block_size = DEFAULT_BLOCK_SIZE,
+                           .replacement_policy = POLICY_LRU};
+        TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+        for(unsigned int pass = 0; pass < 3; pass++) {
+            for(unsigned int block = 0; block < 10; block++) {
+                TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, block * 0x20, NULL));
+            }
+        }
+        counts[i] = sim.stats.compulsory_misses;
+    }
+
+    TEST_ASSERT_EQUAL(10, counts[0]);
+    TEST_ASSERT_EQUAL(counts[0], counts[1]);
+    TEST_ASSERT_EQUAL(counts[0], counts[2]);
+}
+
+/* reset forgets the history too: a block seen before the reset must count as a
+   first sight after it, or the breakdown would describe two runs at once. */
+void test_reset_forgets_the_miss_history(void) {
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x000, NULL));
+    TEST_ASSERT_EQUAL(1, sim.stats.compulsory_misses);
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_reset(&sim));
+    TEST_ASSERT_EQUAL(0, sim.stats.compulsory_misses);
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x000, NULL));
+    TEST_ASSERT_EQUAL(1, sim.stats.compulsory_misses);
+    TEST_ASSERT_EQUAL(0, sim.stats.conflict_misses);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -242,6 +338,11 @@ int main(void) {
     RUN_TEST(test_page_allocation_is_reported);
     RUN_TEST(test_every_status_has_a_message);
     RUN_TEST(test_bad_configuration_is_rejected);
+    RUN_TEST(test_breakdown_names_a_conflict_miss);
+    RUN_TEST(test_breakdown_accounts_for_every_read_miss);
+    RUN_TEST(test_fully_associative_cache_has_no_conflict_misses);
+    RUN_TEST(test_compulsory_count_does_not_depend_on_the_geometry);
+    RUN_TEST(test_reset_forgets_the_miss_history);
 
     return UNITY_END();
 }

@@ -88,6 +88,16 @@ sim_status_t sim_init(simulator_t *sim, const config_t *config){
         return SIM_ERR_OUT_OF_MEMORY;
     }
 
+    //the reference cache holds as many blocks as the real one, which is what makes
+    //its hits mean "the room existed" rather than "a different cache would do"
+    if(classifier_init(&sim->classifier,
+                       sim->cache->num_sets * sim->cache->lines_per_set) != 0){
+        free_cache(sim->cache);
+        sim->cache = NULL;
+        free_memory(&sim->memory);
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
+
     return SIM_OK;
 }
 
@@ -99,6 +109,7 @@ void sim_free(simulator_t *sim){
         free_cache(sim->cache);   //frees the lines, the sets array, and the cache_t struct
         sim->cache = NULL;
     }
+    classifier_free(&sim->classifier);
     //frees the pages and the page table. The memory_t struct itself lives inside
     //the simulator_t, so there is nothing further to release.
     free_memory(&sim->memory);
@@ -112,6 +123,8 @@ sim_status_t sim_reset(simulator_t *sim){
     }
     free_cache(sim->cache);
     sim->cache = fresh;
+    //the breakdown describes a history, so it has to forget one too
+    classifier_reset(&sim->classifier);
     memset(&sim->stats, 0, sizeof(sim->stats));
     return SIM_OK;
 }
@@ -154,6 +167,12 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     int hit = check_cache(sim->cache, addr, &cached_byte, &hit_way);
 
     int set_index = get_set_index(&sim->cache->layout, addr);
+
+    //every access, hit or miss: the reference cache tracks the whole sequence, so
+    //skipping the hits would leave it describing a different workload. The answer
+    //is only spent below, if the real cache actually missed.
+    unsigned long block = addr / (unsigned int)sim->cache->layout.block_size;
+    miss_kind_t kind = classifier_access(&sim->classifier, block, true);
 
     if(hit == 1){
         //counted here rather than on entry: an access that fails is an error and
@@ -206,6 +225,13 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
 
     sim->stats.reads++;
     sim->stats.read_misses++;
+    //No default case: -Wswitch then warns here if a kind is added and this is not
+    //updated, rather than a miss quietly going uncounted.
+    switch(kind){
+        case MISS_COMPULSORY: sim->stats.compulsory_misses++; break;
+        case MISS_CAPACITY:   sim->stats.capacity_misses++;   break;
+        case MISS_CONFLICT:   sim->stats.conflict_misses++;   break;
+    }
     if(evicted){
         sim->stats.evictions++;
     }
@@ -236,6 +262,13 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
 
     int hit_way = -1;
     int hit = check_cache(sim->cache, addr, NULL, &hit_way);   //already resident?
+
+    //a write refreshes a block it finds but brings none in, which is what
+    //no-write-allocate does, so the reference stays a fair comparison. Its verdict
+    //is not used: a write miss fills nothing, so there is no placement decision to
+    //attribute to capacity or to conflict.
+    classifier_access(&sim->classifier,
+                      addr / (unsigned int)sim->cache->layout.block_size, false);
     bool new_page = (sim->memory.page_table[page_index] == NULL);
 
     //write-through: every write reaches main memory. Memory goes first so a

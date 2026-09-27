@@ -173,8 +173,8 @@ mistaken for one from a trace that was read whole.
 produced them, so a file of them is self-describing:
 
 ```
-trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,evictions,errors,malformed
-traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0
+trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,evictions,errors,malformed
+traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0,8,0,0
 ```
 
 ### A worked result
@@ -184,24 +184,50 @@ the set count is, which isolates associativity from everything else.
 [scripts/sweep-associativity](scripts/sweep-associativity) runs it at a **fixed
 1 KB of cache** across every associativity that size allows:
 
-| associativity | sets | hits | misses | miss rate |
-| --- | --- | --- | --- | --- |
-| 1 | 32 | 0 | 32 | 100% |
-| 2 | 16 | 0 | 32 | 100% |
-| 4 | 8 | 0 | 32 | 100% |
-| 8 | 4 | 24 | 8 | **25%** |
-| 16 | 2 | 24 | 8 | 25% |
-| 32 | 1 | 24 | 8 | 25% |
+| associativity | sets | hits | misses | compulsory | capacity | conflict |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 32 | 0 | 32 | 8 | 0 | 24 |
+| 2 | 16 | 0 | 32 | 8 | 0 | 24 |
+| 4 | 8 | 0 | 32 | 8 | 0 | 24 |
+| 8 | 4 | 24 | **8** | 8 | 0 | **0** |
+| 16 | 2 | 24 | 8 | 8 | 0 | 0 |
+| 32 | 1 | 24 | 8 | 8 | 0 | 0 |
 
-Same 1024 bytes of cache in every row. Below 8 ways the eight blocks evict one
-another on every pass and nothing is ever reused; at 8 ways they all fit at once
-and the only misses left are the eight compulsory ones — the first touch of each
-block, which no cache can avoid. 8/32 is the 25%, and it is the floor: more
-associativity past that point buys nothing, which is why the curve is flat.
+Read the last three columns rather than the miss count, because they say which
+knob to turn:
 
-That is the shape of the classic associativity curve, and it is why capacity has
-to be held constant to measure it. Growing the cache instead would have removed
-the same misses for an entirely different reason.
+- **compulsory is 8 in every row.** It is the trace's footprint — eight distinct
+  blocks, each fetched once — and no cache shape changes it. Its being constant is
+  what proves the rows are comparable at all.
+- **capacity is 0 everywhere.** Eight blocks into a cache holding thirty-two: the
+  room was never the problem, so a bigger cache would have bought nothing.
+- **conflict is 24, then 0.** Below eight ways the blocks evict one another
+  although most of the cache stands empty, because all of them may only live in
+  set 0. At eight ways they all fit and it vanishes entirely.
+
+So the diagnosis is *add associativity, not capacity* — and that is a conclusion a
+miss rate alone cannot support. The 25% floor at the bottom is exactly the eight
+compulsory misses over thirty-two accesses; more associativity past that point
+buys nothing, which is why the curve goes flat rather than continuing down.
+
+### How the breakdown is worked out
+Telling capacity from conflict needs a reference that cannot have conflict misses,
+so [src/classify.c](src/classify.c) runs a **fully associative cache of the same
+total size** alongside the real one, holding tags only. If it would have hit, the
+room existed and the set mapping wasted it: conflict. If it would have missed too,
+the room genuinely was not there: capacity. Telling compulsory from either needs
+the set of blocks ever brought in, which grows with the trace's footprint rather
+than with the cache.
+
+Two consequences worth knowing:
+
+- The three account for the **read** misses. A write miss under no-write-allocate
+  fills nothing, so it has no placement decision to attribute; write misses are
+  reported separately.
+- The reference cache is fully associative, so finding a block in it means a linear
+  scan of every block the cache holds. That costs about 0.6s for 500k accesses at
+  32 KB and 3s at 256 KB. Fine at these sizes; a hash index over the ways is the
+  way out if it ever is not.
 
 ## Configuration
 Every setting is a command line flag, listed under [Options](#options) above.
