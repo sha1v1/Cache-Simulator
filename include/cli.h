@@ -2,15 +2,16 @@
 #define CLI_H
 
 #include <stdbool.h>
+#include "config.h"
 #include "log.h"
 
 /**
- * Command line parsing, kept apart from main() so that what the arguments mean
- * is stated in one place and main() is left deciding what to do about them.
+ * Command line parsing, kept apart from main() so that what the arguments mean is
+ * stated in one place and main() is left deciding what to do about them.
  *
- * Nothing here builds a simulator or reads a config file: parsing answers only
- * "what was asked for", which is what lets a bad argument be rejected before any
- * memory is allocated.
+ * The command line is the only way to configure a run. There is no settings file,
+ * so a result depends on the arguments alone and nothing about where the program
+ * was started from can change it.
  */
 
 //Which front end the arguments asked for. MODE_TRACE will join these once the
@@ -22,18 +23,27 @@ typedef enum {
     MODE_INTERACTIVE   //drive the simulator one typed command at a time
 } run_mode_t;
 
+/**
+ * What the arguments asked for.
+ *
+ * The geometry fields hold the values as the user states them - a total size and
+ * an associativity - not the set count the cache is built from. build_config
+ * performs that derivation once, after the whole line has been read, so that
+ * writing --size before or after --block-size cannot change the answer.
+ */
 typedef struct {
     run_mode_t mode;
-    const char *config_path;   //where to read settings from
-    bool config_path_given;    //true if the path came from the command line, in
-                               //which case failing to open it is an error rather
-                               //than a reason to fall back on the defaults
+
     log_level_t log_level;
     bool log_level_given;      //true if -v/-q was passed, so a mode's own default
                                //applies only when the user expressed no preference
-    int block_size;            //bytes per block, when the command line says
-    bool block_size_given;     //true if it did, so the config file still has its
-                               //say when it did not
+
+    int cache_size;            //total bytes of cache
+    int block_size;            //bytes per block
+    int associativity;         //lines per set
+    int memory_size;           //bytes of main memory
+    replacement_policy_t policy;
+    unsigned int seed;         //fixed by default, so runs repeat
 } options_t;
 
 //Fills opts with what no arguments at all would mean.
@@ -42,15 +52,22 @@ void set_option_defaults(options_t *opts);
 /**
  * @brief Reads argv into opts.
  *
- * @param argc argument count, as handed to main()
- * @param argv argument vector, as handed to main()
- * @param opts the options_t to fill; must already hold the defaults
  * @return int 0 if every argument was understood, -1 if one was not
  *
  * The offending argument is reported here, where its spelling is known, rather
  * than handed back for main() to word.
  */
 int parse_args(int argc, char **argv, options_t *opts);
+
+/**
+ * @brief Turns the options into the configuration a simulator is built from.
+ *
+ * @return int 0, or -1 if the sizes do not describe a whole cache
+ *
+ * Separate from parse_args because the derivation needs every value, and the
+ * command line can supply them in any order.
+ */
+int build_config(const options_t *opts, config_t *config);
 
 //The argument reference. program is argv[0], or NULL for the plain name.
 void print_usage(const char *program);

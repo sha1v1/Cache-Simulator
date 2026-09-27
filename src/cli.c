@@ -9,24 +9,25 @@
 
 void set_option_defaults(options_t *opts){
     opts->mode = MODE_NONE;
-    opts->config_path = DEFAULT_CONFIG_PATH;
-    opts->config_path_given = false;
     opts->log_level = LOG_NORMAL;
     opts->log_level_given = false;
+    opts->cache_size = DEFAULT_CACHE_SIZE;
     opts->block_size = DEFAULT_BLOCK_SIZE;
-    opts->block_size_given = false;
+    opts->associativity = DEFAULT_ASSOCIATIVITY;
+    opts->memory_size = DEFAULT_MAIN_MEMORY_SIZE;
+    opts->policy = POLICY_LRU;
+    opts->seed = DEFAULT_SEED;
 }
 
 /**
- * @brief Parses a positive whole number of bytes.
+ * @brief Parses a positive whole number.
  *
  * @return int 0, or -1 if the text is not one
  *
  * getopt_long hands back the text of an argument and takes no view on what it
  * should contain, so the checking is still ours. Only positivity is tested here.
- * Whether a size is a power of two is the engine's rule, and sim_init enforces it
- * for the config file and the command line alike rather than each entry point
- * having its own opinion.
+ * Whether a size is a power of two, or divides into whole sets, is checked where
+ * that rule lives - sim_init and build_config - rather than in every option.
  */
 static int parse_positive_int(const char *text, int *out){
     errno = 0;
@@ -39,15 +40,25 @@ static int parse_positive_int(const char *text, int *out){
     return 0;
 }
 
+//Same, for a seed, where zero is a perfectly good value.
+static int parse_seed(const char *text, unsigned int *out){
+    errno = 0;
+    char *end = NULL;
+    unsigned long value = strtoul(text, &end, 10);
+    if(end == text || *end != '\0' || errno == ERANGE || value > UINT_MAX){
+        return -1;
+    }
+    *out = (unsigned int)value;
+    return 0;
+}
+
 /**
  * @brief Rejects a required value that is present in form but empty.
  *
  * @return bool true if the value was empty, and the complaint has been made
  *
- * getopt_long treats --flag= and --flag "" as an argument that was supplied, so
- * it reports no missing value and hands back an empty string. Catching that here
- * keeps an empty path from reaching whoever opens it, where the failure can only
- * be reported with nothing to name.
+ * getopt_long treats --flag= and --flag "" as an argument that was supplied, so it
+ * reports no missing value and hands back an empty string.
  */
 static bool empty_value(const char *name, const char *value){
     if(value && *value != '\0'){
@@ -57,21 +68,43 @@ static bool empty_value(const char *name, const char *value){
     return true;
 }
 
+//Reads a positive integer option, complaining in its own terms on refusal.
+static int read_int_option(const char *name, const char *text, int *out,
+                           const char *units){
+    if(empty_value(name, text)){
+        return -1;
+    }
+    if(parse_positive_int(text, out) != 0){
+        log_error("Error: %s needs a positive whole number of %s (got '%s')\n",
+                  name, units, text);
+        return -1;
+    }
+    return 0;
+}
+
 //Identifiers for the long-only options, above any char so they cannot collide
 //with a short option's letter.
 enum {
-    OPT_CONFIG = 1000,
-    OPT_BLOCK_SIZE
+    OPT_SIZE = 1000,
+    OPT_BLOCK_SIZE,
+    OPT_ASSOCIATIVITY,
+    OPT_MEMORY_SIZE,
+    OPT_POLICY,
+    OPT_SEED
 };
 
 static const struct option LONG_OPTIONS[] = {
-    {"interactive", no_argument,       NULL, 'i'},
-    {"help",        no_argument,       NULL, 'h'},
-    {"verbose",     no_argument,       NULL, 'v'},
-    {"quiet",       no_argument,       NULL, 'q'},
-    {"config",      required_argument, NULL, OPT_CONFIG},
-    {"block-size",  required_argument, NULL, OPT_BLOCK_SIZE},
-    {NULL,          0,                 NULL, 0}
+    {"interactive",   no_argument,       NULL, 'i'},
+    {"help",          no_argument,       NULL, 'h'},
+    {"verbose",       no_argument,       NULL, 'v'},
+    {"quiet",         no_argument,       NULL, 'q'},
+    {"size",          required_argument, NULL, OPT_SIZE},
+    {"block-size",    required_argument, NULL, OPT_BLOCK_SIZE},
+    {"associativity", required_argument, NULL, OPT_ASSOCIATIVITY},
+    {"memory-size",   required_argument, NULL, OPT_MEMORY_SIZE},
+    {"policy",        required_argument, NULL, OPT_POLICY},
+    {"seed",          required_argument, NULL, OPT_SEED},
+    {NULL,            0,                 NULL, 0}
 };
 
 //A leading ':' asks for ':' on a missing argument rather than '?', which is what
@@ -109,24 +142,49 @@ int parse_args(int argc, char **argv, options_t *opts){
                 opts->log_level_given = true;
                 break;
 
-            case OPT_CONFIG:
-                if(empty_value("--config", optarg)){
+            case OPT_SIZE:
+                if(read_int_option("--size", optarg, &opts->cache_size, "bytes")){
                     return -1;
                 }
-                opts->config_path = optarg;
-                opts->config_path_given = true;
                 break;
 
             case OPT_BLOCK_SIZE:
-                if(empty_value("--block-size", optarg)){
+                if(read_int_option("--block-size", optarg, &opts->block_size, "bytes")){
                     return -1;
                 }
-                if(parse_positive_int(optarg, &opts->block_size) != 0){
-                    log_error("Error: --block-size needs a positive whole number of "
-                              "bytes (got '%s')\n", optarg);
+                break;
+
+            case OPT_ASSOCIATIVITY:
+                if(read_int_option("--associativity", optarg, &opts->associativity,
+                                   "lines per set")){
                     return -1;
                 }
-                opts->block_size_given = true;
+                break;
+
+            case OPT_MEMORY_SIZE:
+                if(read_int_option("--memory-size", optarg, &opts->memory_size, "bytes")){
+                    return -1;
+                }
+                break;
+
+            case OPT_POLICY:
+                if(empty_value("--policy", optarg)){
+                    return -1;
+                }
+                if(parse_policy(optarg, &opts->policy) != 0){
+                    log_error("Error: --policy expects LRU or RANDOM (got '%s')\n", optarg);
+                    return -1;
+                }
+                break;
+
+            case OPT_SEED:
+                if(empty_value("--seed", optarg)){
+                    return -1;
+                }
+                if(parse_seed(optarg, &opts->seed) != 0){
+                    log_error("Error: --seed needs a whole number (got '%s')\n", optarg);
+                    return -1;
+                }
                 break;
 
             //no short option here takes a value, so only a long one can be
@@ -165,20 +223,60 @@ int parse_args(int argc, char **argv, options_t *opts){
     return 0;
 }
 
+int build_config(const options_t *opts, config_t *config){
+    set_config_defaults(config);
+    config->block_size = opts->block_size;
+    config->lines_per_set = opts->associativity;
+    config->main_memory_size = opts->memory_size;
+    config->replacement_policy = opts->policy;
+    config->seed = opts->seed;
+
+    if(config_derive_sets(config, opts->cache_size) != 0){
+        //naming the nearest usable sizes saves the arithmetic: a set holds one
+        //block per way, so the total has to be a whole number of those
+        int bytes_per_set = opts->block_size * opts->associativity;
+        int below = (opts->cache_size / bytes_per_set) * bytes_per_set;
+
+        log_error("Error: --size %d is not a whole number of sets. With %d-byte "
+                  "blocks and %d ways a set holds %d bytes",
+                  opts->cache_size, opts->block_size, opts->associativity,
+                  bytes_per_set);
+        //below is zero for a size under one set, where there is nothing lower to
+        //suggest and offering it twice would read as a mistake
+        if(below > 0){
+            log_error(", so try %d or %d.\n", below, below + bytes_per_set);
+        }
+        else{
+            log_error("; the smallest usable size is %d.\n", bytes_per_set);
+        }
+        return -1;
+    }
+    return 0;
+}
+
 void print_usage(const char *program){
     const char *name = program ? program : "cache_sim";
 
     printf("Usage: %s --interactive [options]\n", name);
     printf("\nModes\n");
-    printf("  -i, --interactive    step through accesses one command at a time,\n");
-    printf("                       narrating what the cache does with each one\n");
-    printf("\nOptions\n");
-    printf("      --block-size N   bytes per block; a power of two (default: %d)\n",
+    printf("  -i, --interactive       step through accesses one command at a time,\n");
+    printf("                          narrating what the cache does with each one\n");
+    printf("\nCache geometry\n");
+    printf("      --size N            total cache size in bytes (default: %d)\n",
+           DEFAULT_CACHE_SIZE);
+    printf("      --block-size N      bytes per block; a power of two (default: %d)\n",
            DEFAULT_BLOCK_SIZE);
-    printf("      --config PATH    read settings from PATH (default: %s)\n",
-           DEFAULT_CONFIG_PATH);
-    printf("  -v, --verbose        narrate the internals as well\n");
-    printf("  -q, --quiet          print only what was explicitly asked for\n");
-    printf("  -h, --help           show this message\n");
+    printf("      --associativity N   lines per set (default: %d)\n",
+           DEFAULT_ASSOCIATIVITY);
+    printf("      --policy NAME       LRU or RANDOM (default: LRU)\n");
+    printf("  The number of sets follows from these: size / (block-size x associativity).\n");
+    printf("\nOther options\n");
+    printf("      --memory-size N     bytes of main memory (default: %d)\n",
+           DEFAULT_MAIN_MEMORY_SIZE);
+    printf("      --seed N            seed for RANDOM replacement (default: %d)\n",
+           DEFAULT_SEED);
+    printf("  -v, --verbose           narrate the internals as well\n");
+    printf("  -q, --quiet             print only what was explicitly asked for\n");
+    printf("  -h, --help              show this message\n");
     printf("\nInteractive mode narrates every access by default; -q turns that off.\n");
 }

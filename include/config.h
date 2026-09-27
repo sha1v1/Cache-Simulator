@@ -1,15 +1,22 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stddef.h>
-
-//The config file the simulator reads at startup.
-#define DEFAULT_CONFIG_PATH "config.txt"
+#include <stdbool.h>
 
 //Bytes per block when nothing says otherwise: the unit main memory and the cache
-//exchange. Lives here rather than beside the cache because it is a setting, and
-//config.c needs it to fill in a default.
+//exchange.
 #define DEFAULT_BLOCK_SIZE 32
+
+//The machine a run with no arguments describes. Stated as a total size and an
+//associativity, the way the command line takes them, rather than as a set count:
+//256 / (32 x 2) is 4 sets, which is what these three amount to.
+#define DEFAULT_CACHE_SIZE       256
+#define DEFAULT_ASSOCIATIVITY    2
+#define DEFAULT_MAIN_MEMORY_SIZE 1024
+
+//Fixed rather than taken from the clock: a measurement tool should repeat, and a
+//run that wants variety can ask for it.
+#define DEFAULT_SEED 1
 
 //Which line a full set gives up on a miss.
 typedef enum {
@@ -17,6 +24,14 @@ typedef enum {
     POLICY_RANDOM    //evict a line chosen at random
 } replacement_policy_t;
 
+/**
+ * The settings one simulated machine is built from.
+ *
+ * num_sets is held rather than a total size because that is what the address
+ * decoding needs, but it is not something the user states: the command line takes
+ * a total size and an associativity, and num_sets follows from them and the block
+ * size. config_derive_sets is what performs that step, in one place.
+ */
 typedef struct {
     int num_sets;
     int main_memory_size;
@@ -24,38 +39,40 @@ typedef struct {
     //must be a power of two: the block offset is masked out of an address rather
     //than divided out, and only a power of two has a mask
     int block_size;
-    //stored as enums rather than strings: the value is validated once while
-    //parsing instead of on every eviction, and there is no fixed-size buffer
-    //for an over-long config value to overflow
+    //stored as an enum rather than a string: the value is validated once while
+    //parsing instead of on every eviction, and there is no fixed-size buffer for
+    //an over-long value to overflow
     replacement_policy_t replacement_policy;
+    //recorded here rather than used here: the engine draws from the global rand(),
+    //which main() seeds. It travels with the configuration so that a reported run
+    //carries the one value needed to reproduce a RANDOM policy exactly.
+    unsigned int seed;
 } config_t;
 
-//Fills config with the built-in defaults. A config file, and then the command
-//line, each override what they mention, so the simulator can run with no
-//config file present at all.
+//Fills config with the built-in defaults, so every field has a value before the
+//command line overrides whatever it mentions.
 void set_config_defaults(config_t *config);
 
 /**
- * @brief Applies the settings in a config file on top of whatever config holds.
+ * @brief Sets num_sets from a total cache size, using the block size and
+ *        associativity already in config.
  *
- * @param config the config_t to update in place
- * @param path the file to read
- * @param error where the offending line is described, when one is rejected;
- *        may be NULL, and is left untouched unless -2 is returned
- * @param error_size the size of that buffer
- * @return int Returns:
- *              - 0 on success
- *              - -1 if the file could not be opened
- *              - -2 if a line was malformed or named an unknown key/value
+ * @param config the config to update; block_size and lines_per_set must be set
+ * @param cache_size total bytes of cache
+ * @return int 0, or -1 if cache_size is not a whole number of
+ *         block_size x lines_per_set groups
  *
- * The complaint is handed back rather than printed, because only the caller
- * knows where it should go. Reporting failure rather than exiting likewise lets
- * the caller decide what a missing file means: main() treats it as "the defaults
- * stand" rather than as a reason to refuse to start.
+ * The three are over-determined - any three of size, block size, associativity
+ * and set count fix the fourth - so exactly one of them has to be the derived
+ * one. Deriving num_sets is what lets a sweep hold total capacity fixed and vary
+ * associativity, which is the comparison worth making.
  */
-int read_config_file(config_t *config, const char *path, char *error, size_t error_size);
+int config_derive_sets(config_t *config, int cache_size);
 
-//Name of a policy, for help text and the config summary.
+//Bytes of cache the configuration describes.
+int config_cache_size(const config_t *config);
+
+//Name of a policy, for help text and the run summary.
 const char *policy_name(replacement_policy_t policy);
 
 //Parses "LRU"/"RANDOM" (case-insensitively) into out. Returns 0, or -1 if the

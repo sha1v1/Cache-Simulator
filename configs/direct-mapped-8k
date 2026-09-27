@@ -1,0 +1,10 @@
+#!/bin/sh
+# 8 KB direct mapped, 64-byte blocks: the shape that shows conflict misses most
+# plainly, since every block has exactly one slot it may occupy.
+exec "$(dirname "$0")/../build/cache_sim" \
+    --size 8192 \
+    --block-size 64 \
+    --associativity 1 \
+    --policy LRU \
+    --memory-size 1048576 \
+    "$@"

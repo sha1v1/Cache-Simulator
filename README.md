@@ -35,15 +35,25 @@ than guessing which front end was meant.
 | Option | Meaning |
 | --- | --- |
 | `-i`, `--interactive` | step through accesses one command at a time |
+| `--size N` | total cache size in bytes (default: 256) |
 | `--block-size N` | bytes per block; a power of two (default: 32) |
-| `--config PATH` | read settings from `PATH` instead of `config.txt` |
+| `--associativity N` | lines per set (default: 2) |
+| `--policy LRU\|RANDOM` | replacement policy (default: LRU) |
+| `--memory-size N` | bytes of main memory (default: 1024) |
+| `--seed N` | seed for RANDOM replacement (default: 1) |
 | `-v`, `--verbose` | narrate the internals as well |
 | `-q`, `--quiet` | print only what was explicitly asked for |
 | `-h`, `--help` | show the usage message |
 
-A `--config` file named on the command line has to exist; the default
-`config.txt` merely being absent is not an error, since the built-in defaults
-are already a usable machine.
+The number of sets is **derived**, not given: `size / (block-size × associativity)`.
+That is what lets a comparison hold total capacity fixed and vary only the
+organisation — `--size 32768 --associativity 1` and `--size 32768 --associativity 8`
+are two shapes of the same 32 KB. A size that is not a whole number of sets is
+refused, and the message names the nearest sizes that are.
+
+The command line is the only way to configure a run: there is no settings file, so
+a result depends on the arguments alone and cannot change with the directory the
+program was started from.
 
 Interactive mode prints the active configuration and the command list, then
 waits at a prompt. Each access is narrated in three parts: how the address
@@ -123,22 +133,36 @@ that failed, such as one to an address outside main memory, is counted in
 so a cold miss into an empty line is not one.
 
 ## Configuration
-The program reads configuration settings from `config.txt`, defining cache and memory behaviour. Any setting the file leaves out keeps its built-in default, so the simulator still runs if the file is missing. Blank lines and `#` comments are ignored. The parameters are listed below:
-- `num_sets`: Number of sets in the cache. Must be a power of two, because the
-  set index is masked out of the address rather than computed with a modulo.
-- `main_memory_size`: Size of main memory in bytes. Must be a positive multiple
-  of `block_size`, so the last block does not run past the end of memory. This
-  also rules out a memory smaller than a single block.
-- `block_size`: Bytes per block, and so the width of one cache line. Must be a
-  power of two, for the same reason as `num_sets`: the block offset is masked out
-  of an address rather than divided out of it, and only a power of two has a mask
-  that isolates the right bits. At 48 bytes, 47 is `0b101111` and the masking
-  would quietly return nonsense.
-- `lines_per_set`: Number of lines in each set in the cache. Any positive value;
-  associativity is not encoded in the address, so it need not be a power of two.
-- `replacement_policy`: Defines the policy to replace line in case of conflicts.
-    - `LRU`: replace the least recently used line.
-    - `RANDOM`: replace a randomly chosen line.
+Every setting is a command line flag, listed under [Options](#options) above.
+The rules each one has to satisfy:
+
+- `--size`: Total bytes of cache. Must be a whole number of sets, i.e. divisible
+  by `block-size × associativity`, since there is no fraction of a set index.
+- `--block-size`: Bytes per block, and so the width of one cache line. Must be a
+  power of two: the block offset is masked out of an address rather than divided
+  out of it, and only a power of two has a mask that isolates the right bits. At
+  48 bytes, 47 is `0b101111` and the masking would quietly return nonsense.
+- `--associativity`: Lines in each set. Any positive value; associativity is not
+  encoded in the address, so it need not be a power of two. The derived set count
+  must be, and is, since size and block size both are.
+- `--memory-size`: Bytes of main memory. Must be a positive multiple of
+  `block-size`, so the last block does not run past the end of memory. This also
+  rules out a memory smaller than a single block.
+- `--policy`: `LRU` replaces the least recently used line, `RANDOM` one chosen at
+  random.
+- `--seed`: Seeds the generator `RANDOM` draws from, so two runs of the same
+  command agree. It is reported with the configuration, which is what makes a
+  published number reproducible.
+
+### Presets
+A long invocation is worth naming. [configs/](configs/) holds shell scripts rather
+than a settings file, because a script composes — anything written after it
+overrides it:
+
+```
+./configs/l1-32k-8way --interactive
+./configs/l1-32k-8way --interactive --associativity 1   # same 32 KB, direct mapped
+```
 
 Writes are write-through with no-write-allocate: a write always reaches main
 memory, and updates the cache only when the address is already resident.
@@ -192,7 +216,7 @@ main.c  cli.c  commands.c   front end: arguments, what to do, reading input
 | [src/sim.c](src/sim.c) | engine | read/write through the cache, and the statistics |
 | [src/cache.c](src/cache.c) | engine | sets, lines, address decoding, replacement |
 | [src/memory.c](src/memory.c) | engine | paged main memory, allocated on first touch |
-| [src/config.c](src/config.c) | engine | defaults and the config file |
+| [src/config.c](src/config.c) | engine | defaults, policy names, derived set count |
 
 Names are snake_case throughout: functions and variables plainly, types with a
 `_t` suffix so that a `cache_t *cache` or a `set_t *set` needs no contortion to

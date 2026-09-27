@@ -282,5 +282,5 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
 }
 
 int sim_cache_size(const simulator_t *sim){
-    return sim->config.num_sets * sim->config.lines_per_set * sim->config.block_size;
+    return config_cache_size(&sim->config);
 }

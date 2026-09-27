@@ -12,6 +12,7 @@ void report_config(const simulator_t *sim){
     printf("  cache size        : %d bytes\n", sim_cache_size(sim));
     printf("  main memory       : %d bytes\n", c->main_memory_size);
     printf("  replacement policy: %s\n", policy_name(c->replacement_policy));
+    printf("  seed              : %u\n", c->seed);
     printf("  write policy      : write-through, no-write-allocate\n");
 }
 

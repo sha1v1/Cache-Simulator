@@ -1,0 +1,15 @@
+#!/bin/sh
+# A typical L1 data cache: 32 KB, 64-byte blocks, 8-way set associative, LRU.
+#
+# Presets are shell scripts rather than a settings file so that they compose:
+# anything written after the preset is passed through and overrides it.
+#
+#   ./configs/l1-32k-8way --interactive
+#   ./configs/l1-32k-8way --associativity 1     # same capacity, direct mapped
+exec "$(dirname "$0")/../build/cache_sim" \
+    --size 32768 \
+    --block-size 64 \
+    --associativity 8 \
+    --policy LRU \
+    --memory-size 1048576 \
+    "$@"
