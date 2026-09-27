@@ -39,6 +39,24 @@ static int parse_positive_int(const char *text, int *out){
     return 0;
 }
 
+/**
+ * @brief Rejects a required value that is present in form but empty.
+ *
+ * @return bool true if the value was empty, and the complaint has been made
+ *
+ * getopt_long treats --flag= and --flag "" as an argument that was supplied, so
+ * it reports no missing value and hands back an empty string. Catching that here
+ * keeps an empty path from reaching whoever opens it, where the failure can only
+ * be reported with nothing to name.
+ */
+static bool empty_value(const char *name, const char *value){
+    if(value && *value != '\0'){
+        return false;
+    }
+    log_error("Error: %s was given an empty value\n", name);
+    return true;
+}
+
 //Identifiers for the long-only options, above any char so they cannot collide
 //with a short option's letter.
 enum {
@@ -92,11 +110,17 @@ int parse_args(int argc, char **argv, options_t *opts){
                 break;
 
             case OPT_CONFIG:
+                if(empty_value("--config", optarg)){
+                    return -1;
+                }
                 opts->config_path = optarg;
                 opts->config_path_given = true;
                 break;
 
             case OPT_BLOCK_SIZE:
+                if(empty_value("--block-size", optarg)){
+                    return -1;
+                }
                 if(parse_positive_int(optarg, &opts->block_size) != 0){
                     log_error("Error: --block-size needs a positive whole number of "
                               "bytes (got '%s')\n", optarg);
