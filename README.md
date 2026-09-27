@@ -132,6 +132,77 @@ that failed, such as one to an address outside main memory, is counted in
 `errors` alone. `evictions` counts only the misses that displaced a valid line,
 so a cold miss into an empty line is not one.
 
+## Trace mode
+Interactive mode shows how one access works. Trace mode runs a whole workload and
+reports only the totals, which is what makes configurations comparable:
+
+```
+./build/cache_sim traces/conflict.trace --size 1024 --block-size 32 --associativity 8
+cat traces/conflict.trace | ./build/cache_sim - --size 1024      # - reads stdin
+```
+
+A trace line is an operation, an address, and optionally how many bytes it
+touches. Addresses are hex, with or without `0x`; fields may be separated by
+spaces or commas; blank lines and `#` comments are ignored.
+
+```
+R 0x1000          read one byte
+W 0x1004 4        write four bytes
+I 0x400abc,8      an instruction fetch
+```
+
+The byte count matters. An access that straddles a block boundary touches two
+blocks and is therefore **two** cache lookups, each able to hit or miss on its
+own — counting it once would undercount exactly the unaligned accesses real
+programs make. `records` and `accesses` in the output differ for this reason.
+
+Instruction fetches go through the same cache as data, since there is only one
+here, but are counted separately so a trace that distinguishes them is not
+silently flattened. A write stores a fixed byte: a trace records where a program
+wrote, not what, and the value cannot turn a hit into a miss.
+
+### Nothing is silently wrong
+A line that cannot be read, or an access the simulator refuses — an address past
+the end of main memory, say — is counted, the first few are named with their line
+numbers, and **the run exits non-zero**. The statistics still print, marked
+incomplete. A number computed from a trace that was only partly read must not be
+mistaken for one from a trace that was read whole.
+
+### Machine-readable output
+`--format csv` prints one row carrying both the results and the configuration that
+produced them, so a file of them is self-describing:
+
+```
+trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,evictions,errors,malformed
+traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0
+```
+
+### A worked result
+[traces/conflict.trace](traces/conflict.trace) reads eight blocks 1024 bytes
+apart, four times over. The stride is chosen so all eight map to set 0 whatever
+the set count is, which isolates associativity from everything else.
+[scripts/sweep-associativity](scripts/sweep-associativity) runs it at a **fixed
+1 KB of cache** across every associativity that size allows:
+
+| associativity | sets | hits | misses | miss rate |
+| --- | --- | --- | --- | --- |
+| 1 | 32 | 0 | 32 | 100% |
+| 2 | 16 | 0 | 32 | 100% |
+| 4 | 8 | 0 | 32 | 100% |
+| 8 | 4 | 24 | 8 | **25%** |
+| 16 | 2 | 24 | 8 | 25% |
+| 32 | 1 | 24 | 8 | 25% |
+
+Same 1024 bytes of cache in every row. Below 8 ways the eight blocks evict one
+another on every pass and nothing is ever reused; at 8 ways they all fit at once
+and the only misses left are the eight compulsory ones — the first touch of each
+block, which no cache can avoid. 8/32 is the 25%, and it is the floor: more
+associativity past that point buys nothing, which is why the curve is flat.
+
+That is the shape of the classic associativity curve, and it is why capacity has
+to be held constant to measure it. Growing the cache instead would have removed
+the same misses for an entirely different reason.
+
 ## Configuration
 Every setting is a command line flag, listed under [Options](#options) above.
 The rules each one has to satisfy:
@@ -211,6 +282,7 @@ main.c  cli.c  commands.c   front end: arguments, what to do, reading input
 | [src/main.c](src/main.c) | front end | picks a front end from the arguments, then builds the simulator |
 | [src/cli.c](src/cli.c) | front end | what the command line arguments mean |
 | [src/commands.c](src/commands.c) | front end | the command language and the menu loop |
+| [src/trace.c](src/trace.c) | front end | reading a trace file and running it |
 | [src/report.c](src/report.c) | presentation | every line of text the program prints |
 | [src/log.c](src/log.c) | presentation | output level, for the layers that print |
 | [src/sim.c](src/sim.c) | engine | read/write through the cache, and the statistics |

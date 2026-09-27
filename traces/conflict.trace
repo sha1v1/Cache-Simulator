@@ -1,0 +1,45 @@
+# Eight blocks 1024 bytes apart, revisited four times.
+#
+# The stride is chosen so that every one of them maps to set 0 whatever the
+# set count is, which isolates associativity: with fewer than 8 ways they
+# evict each other on every pass, and with 8 or more they all fit and only
+# the eight compulsory misses remain.
+#
+#   scripts/sweep-associativity traces/conflict.trace
+
+# pass 1
+R 0x0
+R 0x400
+R 0x800
+R 0xc00
+R 0x1000
+R 0x1400
+R 0x1800
+R 0x1c00
+# pass 2
+R 0x0
+R 0x400
+R 0x800
+R 0xc00
+R 0x1000
+R 0x1400
+R 0x1800
+R 0x1c00
+# pass 3
+R 0x0
+R 0x400
+R 0x800
+R 0xc00
+R 0x1000
+R 0x1400
+R 0x1800
+R 0x1c00
+# pass 4
+R 0x0
+R 0x400
+R 0x800
+R 0xc00
+R 0x1000
+R 0x1400
+R 0x1800
+R 0x1c00

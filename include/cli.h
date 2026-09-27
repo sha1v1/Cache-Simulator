@@ -14,14 +14,20 @@
  * was started from can change it.
  */
 
-//Which front end the arguments asked for. MODE_TRACE will join these once the
-//trace driven runner exists; the mode is already explicit so that adding it
-//changes no behaviour a user has come to rely on.
+//Which front end the arguments asked for.
 typedef enum {
     MODE_NONE,         //no mode was requested: print usage and stop
     MODE_HELP,         //help was asked for outright, which is not a failure
-    MODE_INTERACTIVE   //drive the simulator one typed command at a time
+    MODE_INTERACTIVE,  //drive the simulator one typed command at a time
+    MODE_TRACE         //run a whole trace file, then report what it did
 } run_mode_t;
+
+//How a trace run states its results. The two have opposite aims: one is read by
+//a person, the other concatenated by a script into something plottable.
+typedef enum {
+    FORMAT_HUMAN,
+    FORMAT_CSV
+} output_format_t;
 
 /**
  * What the arguments asked for.
@@ -44,6 +50,10 @@ typedef struct {
     int memory_size;           //bytes of main memory
     replacement_policy_t policy;
     unsigned int seed;         //fixed by default, so runs repeat
+
+    const char *trace_path;    //the trace to run, or "-" for standard input;
+                               //NULL unless a positional argument was given
+    output_format_t format;
 } options_t;
 
 //Fills opts with what no arguments at all would mean.

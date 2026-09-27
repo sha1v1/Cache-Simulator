@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 void set_option_defaults(options_t *opts){
     opts->mode = MODE_NONE;
@@ -17,6 +18,8 @@ void set_option_defaults(options_t *opts){
     opts->memory_size = DEFAULT_MAIN_MEMORY_SIZE;
     opts->policy = POLICY_LRU;
     opts->seed = DEFAULT_SEED;
+    opts->trace_path = NULL;
+    opts->format = FORMAT_HUMAN;
 }
 
 /**
@@ -90,7 +93,8 @@ enum {
     OPT_ASSOCIATIVITY,
     OPT_MEMORY_SIZE,
     OPT_POLICY,
-    OPT_SEED
+    OPT_SEED,
+    OPT_FORMAT
 };
 
 static const struct option LONG_OPTIONS[] = {
@@ -104,6 +108,7 @@ static const struct option LONG_OPTIONS[] = {
     {"memory-size",   required_argument, NULL, OPT_MEMORY_SIZE},
     {"policy",        required_argument, NULL, OPT_POLICY},
     {"seed",          required_argument, NULL, OPT_SEED},
+    {"format",        required_argument, NULL, OPT_FORMAT},
     {NULL,            0,                 NULL, 0}
 };
 
@@ -187,6 +192,22 @@ int parse_args(int argc, char **argv, options_t *opts){
                 }
                 break;
 
+            case OPT_FORMAT:
+                if(empty_value("--format", optarg)){
+                    return -1;
+                }
+                if(strcasecmp(optarg, "human") == 0){
+                    opts->format = FORMAT_HUMAN;
+                }
+                else if(strcasecmp(optarg, "csv") == 0){
+                    opts->format = FORMAT_CSV;
+                }
+                else{
+                    log_error("Error: --format expects human or csv (got '%s')\n", optarg);
+                    return -1;
+                }
+                break;
+
             //no short option here takes a value, so only a long one can be
             //missing its argument, and the argument as written names it
             case ':':
@@ -212,12 +233,23 @@ int parse_args(int argc, char **argv, options_t *opts){
         }
     }
 
-    //whatever is left is positional. A trace file will live here; until the trace
-    //runner exists, say that plainly rather than calling it an unknown option.
+    //whatever is left is positional: the trace to run, by the usual convention
+    //that a program's primary input needs no flag in front of it
     if(optind < argc){
-        log_error("Error: trace files are not supported yet ('%s'). "
-                  "Use --interactive for now.\n", argv[optind]);
-        return -1;
+        if(argc - optind > 1){
+            log_error("Error: one trace file at a time (also given '%s')\n",
+                      argv[optind + 1]);
+            return -1;
+        }
+        //stepping through a trace at the prompt is a worthwhile thing to build,
+        //but it should be built deliberately rather than falling out of which
+        //flag happened to be written last
+        if(opts->mode == MODE_INTERACTIVE){
+            log_error("Error: choose one mode: a trace file, or --interactive\n");
+            return -1;
+        }
+        opts->trace_path = argv[optind];
+        opts->mode = MODE_TRACE;
     }
 
     return 0;
@@ -257,8 +289,11 @@ int build_config(const options_t *opts, config_t *config){
 void print_usage(const char *program){
     const char *name = program ? program : "cache_sim";
 
-    printf("Usage: %s --interactive [options]\n", name);
+    printf("Usage: %s TRACE [options]\n", name);
+    printf("       %s --interactive [options]\n", name);
     printf("\nModes\n");
+    printf("  TRACE                   run every access in a trace file, then report\n");
+    printf("                          the statistics; use - to read standard input\n");
     printf("  -i, --interactive       step through accesses one command at a time,\n");
     printf("                          narrating what the cache does with each one\n");
     printf("\nCache geometry\n");
@@ -275,8 +310,12 @@ void print_usage(const char *program){
            DEFAULT_MAIN_MEMORY_SIZE);
     printf("      --seed N            seed for RANDOM replacement (default: %d)\n",
            DEFAULT_SEED);
+    printf("      --format NAME       human or csv, for a trace run (default: human)\n");
     printf("  -v, --verbose           narrate the internals as well\n");
     printf("  -q, --quiet             print only what was explicitly asked for\n");
     printf("  -h, --help              show this message\n");
     printf("\nInteractive mode narrates every access by default; -q turns that off.\n");
+    printf("A trace run never narrates per access, whatever the level.\n");
+    printf("\nA trace line is an operation, an address and an optional byte count:\n");
+    printf("  R 0x1000        W 0x1004 4        I 0x400abc,8        # comment\n");
 }

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs one trace at a fixed cache size across a range of associativities and
+# writes the rows as CSV, header first.
+#
+#   scripts/sweep-associativity traces/conflict.trace [extra flags...]
+#
+# Capacity is held constant on purpose: varying associativity while the total size
+# moves would confound conflict misses with capacity misses, and the point is to
+# separate them.
+set -e
+trace=${1:?usage: sweep-associativity TRACE [extra flags...]}
+shift
+SIM="$(dirname "$0")/../build/cache_sim"
+FIXED="--size 1024 --block-size 32 --memory-size 8192"
+
+first=1
+for ways in 1 2 4 8 16 32; do
+    if [ "$first" = 1 ]; then
+        "$SIM" "$trace" $FIXED --associativity "$ways" --format csv "$@"
+        first=0
+    else
+        "$SIM" "$trace" $FIXED --associativity "$ways" --format csv "$@" | tail -n +2
+    fi
+done

@@ -43,6 +43,54 @@ void report_stats(const stats_t *s){
     printf("  errors      : %lu\n", s->errors);
 }
 
+void report_trace_summary(const simulator_t *sim, const char *name,
+                          const trace_summary_t *trace){
+    (void)sim;
+    printf("\nTrace: %s\n", name);
+    printf("  records     : %lu", trace->records);
+    if(trace->instructions > 0){
+        printf(" (%lu instruction fetches)", trace->instructions);
+    }
+    printf("\n");
+    //accesses exceeds records when a record straddled a block boundary, which is
+    //worth showing rather than hiding, since it is why the two differ
+    printf("  accesses    : %lu\n", trace->accesses);
+    if(trace->skipped > 0){
+        printf("  skipped     : %lu (blank or comment)\n", trace->skipped);
+    }
+    if(trace->malformed > 0){
+        printf("  malformed   : %lu (NOT run - these results are incomplete)\n",
+               trace->malformed);
+    }
+    if(trace->failed > 0){
+        printf("  refused     : %lu access%s the simulator would not perform "
+               "(results are incomplete)\n",
+               trace->failed, trace->failed == 1 ? "" : "es");
+    }
+    if(trace->truncated > 0){
+        printf("  over-long   : %lu (line did not fit, remainder discarded)\n",
+               trace->truncated);
+    }
+}
+
+void report_csv(const simulator_t *sim, const char *name,
+                const trace_summary_t *trace){
+    const config_t *c = &sim->config;
+    const stats_t *s = &sim->stats;
+    unsigned long accesses = s->reads + s->writes;
+    unsigned long hits = s->read_hits + s->write_hits;
+    unsigned long misses = s->read_misses + s->write_misses;
+    double miss_rate = accesses == 0 ? 0.0 : (double)misses / (double)accesses;
+
+    printf("trace,size,block,assoc,policy,seed,records,accesses,hits,misses,"
+           "miss_rate,evictions,errors,malformed\n");
+    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu\n",
+           name, config_cache_size(c), c->block_size, c->lines_per_set,
+           policy_name(c->replacement_policy), c->seed,
+           trace->records, accesses, hits, misses, miss_rate,
+           s->evictions, s->errors, trace->malformed);
+}
+
 void report_cache(const cache_t *cache){
     if(!cache || !cache->cache_sets){
         log_error("Error: cache is not initialized\n");

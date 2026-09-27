@@ -2,6 +2,7 @@
 #define REPORT_H
 
 #include "sim.h"
+#include "trace.h"
 
 /**
  * The presentation layer: turns what the engine returns into text.
@@ -11,6 +12,27 @@
  * different wording - or machine-readable rows - can ignore this file entirely
  * and format the same structs itself.
  */
+
+/**
+ * @brief What reading the trace amounted to: records, and what was unreadable.
+ *
+ * Separate from report_stats because these count lines of a file while those
+ * count accesses to a cache, and a run where the two disagree - a malformed line,
+ * a record spanning two blocks - is exactly the run worth noticing.
+ */
+void report_trace_summary(const simulator_t *sim, const char *name,
+                          const trace_summary_t *trace);
+
+/**
+ * @brief One row of machine-readable results, with the configuration that
+ *        produced them.
+ *
+ * Carrying the configuration in the row is what makes a file of these
+ * self-describing: a sweep appends one per run and nothing else has to record
+ * which line came from which invocation.
+ */
+void report_csv(const simulator_t *sim, const char *name,
+                const trace_summary_t *trace);
 
 //The active configuration, and the running totals.
 void report_config(const simulator_t *sim);
