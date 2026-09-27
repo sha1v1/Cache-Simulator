@@ -2,10 +2,10 @@
 #include "../include/config.h"
 #include "../include/log.h"
 #include <errno.h>
+#include <getopt.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 void set_option_defaults(options_t *opts){
     opts->mode = MODE_NONE;
@@ -22,9 +22,11 @@ void set_option_defaults(options_t *opts){
  *
  * @return int 0, or -1 if the text is not one
  *
- * Only positivity is checked here. Whether the value is a power of two is the
- * engine's rule, and sim_init enforces it for the config file and the command
- * line alike rather than each entry point having its own opinion.
+ * getopt_long hands back the text of an argument and takes no view on what it
+ * should contain, so the checking is still ours. Only positivity is tested here.
+ * Whether a size is a power of two is the engine's rule, and sim_init enforces it
+ * for the config file and the command line alike rather than each entry point
+ * having its own opinion.
  */
 static int parse_positive_int(const char *text, int *out){
     errno = 0;
@@ -37,117 +39,105 @@ static int parse_positive_int(const char *text, int *out){
     return 0;
 }
 
-/**
- * @brief The value written onto an option, as in "--config=cache.txt".
- *
- * @return const char* the text after the '=', or NULL if this argument is not
- *         that option written in the attached form
- */
-static const char *attached_value(const char *arg, const char *name){
-    size_t len = strlen(name);
-    if(strncmp(arg, name, len) == 0 && arg[len] == '='){
-        return arg + len + 1;
-    }
-    return NULL;
-}
+//Identifiers for the long-only options, above any char so they cannot collide
+//with a short option's letter.
+enum {
+    OPT_CONFIG = 1000,
+    OPT_BLOCK_SIZE
+};
 
-//True if arg is this option, written either on its own or with a value attached.
-static bool is_option(const char *arg, const char *name){
-    return strcmp(arg, name) == 0 || attached_value(arg, name) != NULL;
-}
+static const struct option LONG_OPTIONS[] = {
+    {"interactive", no_argument,       NULL, 'i'},
+    {"help",        no_argument,       NULL, 'h'},
+    {"verbose",     no_argument,       NULL, 'v'},
+    {"quiet",       no_argument,       NULL, 'q'},
+    {"config",      required_argument, NULL, OPT_CONFIG},
+    {"block-size",  required_argument, NULL, OPT_BLOCK_SIZE},
+    {NULL,          0,                 NULL, 0}
+};
 
-/**
- * @brief The value of an option that requires one, from either spelling.
- *
- * @param i index of the option; advanced past the value when it is separate
- * @param example a sample value, so the complaint shows this option's own shape
- *        rather than one borrowed from whichever option was written first
- * @return const char* the value, or NULL if none was supplied
- *
- * Accepting both "--config x" and "--config=x" costs one branch and spares the
- * user having to remember which form this program wanted.
- */
-static const char *option_value(int argc, char **argv, int *i, const char *name,
-                                const char *example){
-    const char *attached = attached_value(argv[*i], name);
-    if(attached){
-        if(*attached == '\0'){
-            log_error("Error: %s needs a value, as in '%s=%s'\n", name, name, example);
-            return NULL;
-        }
-        return attached;
-    }
-    if(*i + 1 >= argc){
-        log_error("Error: %s needs a value, as in '%s %s'\n", name, name, example);
-        return NULL;
-    }
-    (*i)++;
-    return argv[*i];
-}
+//A leading ':' asks for ':' on a missing argument rather than '?', which is what
+//lets a value that was left out be reported differently from an option nobody
+//recognises. opterr is cleared so the complaints below are the only ones printed.
+#define SHORT_OPTIONS ":ihvq"
 
 int parse_args(int argc, char **argv, options_t *opts){
-    for(int i = 1; i < argc; i++){
-        const char *arg = argv[i];
+    //getopt_long keeps its position in a global, so it has to be rewound before
+    //each parse. Without this a second call in one process - a test, say - would
+    //resume wherever the first one stopped.
+    optind = 1;
+    opterr = 0;
 
-        //help wins over anything else on the line: someone who asked how to use
-        //the program wants an answer, not a run
-        if(strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0){
-            opts->mode = MODE_HELP;
-            return 0;
-        }
+    int c;
+    while((c = getopt_long(argc, argv, SHORT_OPTIONS, LONG_OPTIONS, NULL)) != -1){
+        switch(c){
+            case 'h':
+                //help wins over anything else on the line: someone who asked how
+                //to use the program wants an answer, not a run
+                opts->mode = MODE_HELP;
+                return 0;
 
-        if(strcmp(arg, "-i") == 0 || strcmp(arg, "--interactive") == 0){
-            opts->mode = MODE_INTERACTIVE;
-            continue;
-        }
+            case 'i':
+                opts->mode = MODE_INTERACTIVE;
+                break;
 
-        if(strcmp(arg, "-v") == 0 || strcmp(arg, "--verbose") == 0){
-            opts->log_level = LOG_VERBOSE;
-            opts->log_level_given = true;
-            continue;
-        }
+            case 'v':
+                opts->log_level = LOG_VERBOSE;
+                opts->log_level_given = true;
+                break;
 
-        if(strcmp(arg, "-q") == 0 || strcmp(arg, "--quiet") == 0){
-            opts->log_level = LOG_QUIET;
-            opts->log_level_given = true;
-            continue;
-        }
+            case 'q':
+                opts->log_level = LOG_QUIET;
+                opts->log_level_given = true;
+                break;
 
-        if(is_option(arg, "--block-size")){
-            const char *value = option_value(argc, argv, &i, "--block-size", "64");
-            if(!value){
+            case OPT_CONFIG:
+                opts->config_path = optarg;
+                opts->config_path_given = true;
+                break;
+
+            case OPT_BLOCK_SIZE:
+                if(parse_positive_int(optarg, &opts->block_size) != 0){
+                    log_error("Error: --block-size needs a positive whole number of "
+                              "bytes (got '%s')\n", optarg);
+                    return -1;
+                }
+                opts->block_size_given = true;
+                break;
+
+            //no short option here takes a value, so only a long one can be
+            //missing its argument, and the argument as written names it
+            case ':':
+                log_error("Error: %s needs a value\n", argv[optind - 1]);
                 return -1;
-            }
-            if(parse_positive_int(value, &opts->block_size) != 0){
-                log_error("Error: --block-size needs a positive whole number of "
-                          "bytes (got '%s')\n", value);
+
+            //optopt gives the letter for a short option, which names the culprit
+            //inside a bundle like -vx instead of blaming the whole bundle. For a
+            //long option it holds a val above any character, so fall back to the
+            //argument as the user wrote it.
+            case '?':
+                if(optopt > 0 && optopt <= UCHAR_MAX){
+                    log_error("Error: unknown option '-%c'\n", optopt);
+                }
+                else{
+                    log_error("Error: unknown option '%s'\n", argv[optind - 1]);
+                }
                 return -1;
-            }
-            opts->block_size_given = true;
-            continue;
-        }
 
-        if(is_option(arg, "--config")){
-            const char *value = option_value(argc, argv, &i, "--config", "config.txt");
-            if(!value){
+            default:
+                //unreachable: every value the table can return is handled above
                 return -1;
-            }
-            opts->config_path = value;
-            opts->config_path_given = true;
-            continue;
         }
+    }
 
-        //a bare word is what a trace file will look like, so say that plainly
-        //rather than calling it an unknown option
-        if(arg[0] != '-'){
-            log_error("Error: trace files are not supported yet ('%s'). "
-                     "Use --interactive for now.\n", arg);
-            return -1;
-        }
-
-        log_error("Error: unknown option '%s'\n", arg);
+    //whatever is left is positional. A trace file will live here; until the trace
+    //runner exists, say that plainly rather than calling it an unknown option.
+    if(optind < argc){
+        log_error("Error: trace files are not supported yet ('%s'). "
+                  "Use --interactive for now.\n", argv[optind]);
         return -1;
     }
+
     return 0;
 }
 
