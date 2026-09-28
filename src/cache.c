@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// counter to manage last access times for lines in a set
-unsigned int global_time = 0;
-
 /**
  * @brief Initialize all sets within the cache.
  *
@@ -262,7 +259,7 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
             if (out_way) {
                 *out_way = i;
             }
-            line->last_access_time = global_time++;  // Update LRU timestamp
+            line->last_access_time = ++cache->clock;  // Update LRU timestamp
             // Cache hit
             return 1;
         }
@@ -342,6 +339,7 @@ line_t *random_replacement(set_t *set)
 /**
  * @brief Update a given line_t with the provided tag bits and the clock of data.
  *
+ * @param cache cache that owns the line and its LRU clock
  * @param line pointer to the line to be updated
  * @param tag_bits the value the line's tag is to be set to
  * @param block_data the new data for the line: must point to at least
@@ -350,12 +348,12 @@ line_t *random_replacement(set_t *set)
  *
  * Used after cache hit/miss to keep it consistent with the main memory.
  */
-void update_cache(line_t *line, unsigned int tag_bits, const uint8_t *block_data,
-                  int block_size)
+void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits,
+                  const uint8_t *block_data, int block_size)
 {
     line->valid_bit = true;
     line->tag = tag_bits;
-    line->last_access_time = global_time++; // update to current time
+    line->last_access_time = ++cache->clock;
 
     //block_data is block_size raw bytes, not a string: copy a counted length so a
     //zero byte inside the block neither truncates the copy nor, in its absence,

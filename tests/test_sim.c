@@ -63,9 +63,11 @@ void test_write_through_no_write_allocate(void) {
 
     /* now resident, so the next write is a hit and updates the line too */
     TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x40, &info));
+    uint64_t clock_before_write = sim.cache->clock;
     TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x40, 'B', &info));
     TEST_ASSERT_EQUAL(ACCESS_HIT, info.result);
     TEST_ASSERT_EQUAL(1, sim.stats.write_hits);
+    TEST_ASSERT_EQUAL_UINT64(clock_before_write + 1, sim.cache->clock);
 
     uint8_t cached = 0;
     TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x40, &cached, NULL));
@@ -115,6 +117,7 @@ void test_reset_empties_the_cache_and_the_stats(void) {
     TEST_ASSERT_EQUAL(0, check_cache(sim.cache, 0x100, NULL, NULL));
     TEST_ASSERT_EQUAL(0, sim.stats.reads);
     TEST_ASSERT_EQUAL(0, sim.stats.read_misses);
+    TEST_ASSERT_EQUAL_UINT64(0, sim.cache->clock);
 }
 
 void test_command_lines_drive_the_simulator(void) {

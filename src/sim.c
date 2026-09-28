@@ -224,8 +224,8 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     set_t *set = &sim->cache->cache_sets[set_index];
     int line_index = (int)(line - set->cache_lines);
 
-    update_cache(line, get_tag_bits(&sim->cache->layout, addr), block_data,
-                 sim->cache->layout.block_size);
+    update_cache(sim->cache, line, get_tag_bits(&sim->cache->layout, addr),
+                 block_data, sim->cache->layout.block_size);
 
     int fetched_byte = block_data[get_block_offset(&sim->cache->layout, addr)];
     free(block_data);
@@ -296,7 +296,6 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
         //straight there instead of searching the set for the same tag a second time
         line_t *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
         line->block[get_block_offset(&sim->cache->layout, addr)] = value;
-        line->last_access_time = global_time++;
         line_index = hit_way;
     }
 
