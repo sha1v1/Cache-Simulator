@@ -44,6 +44,8 @@ typedef struct {
                        //Points into the single arena the cache allocates, so no
                        //line owns its own block and none has to be freed.
     uint64_t last_access_time;
+    uint64_t inserted_at;      //when the current block entered this line; hits
+                               //never change it, which is what FIFO needs
 } line_t;
 
 typedef struct {
@@ -57,7 +59,7 @@ typedef struct {
     int lines_per_set;        //just easy to access lol
     address_layout_t layout;  //how this cache reads an address apart
     uint8_t *block_arena;     //one allocation holding every line's block bytes
-    uint64_t clock;           //per-cache LRU clock; advances once per line touch
+    uint64_t clock;           //per-cache replacement clock; advances per line touch
 } cache_t;
 
 
@@ -81,7 +83,8 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
 
 line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_policy_t policy);
 line_t *random_replacement(set_t *set);
-line_t* least_recently_used(set_t *set);
+line_t *least_recently_used(set_t *set);
+line_t *first_in_first_out(set_t *set);
 void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits,
                   const uint8_t *block_data, int block_size);
 void free_cache(cache_t *cache);

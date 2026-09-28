@@ -43,6 +43,7 @@ int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
             line->valid_bit = false;
             line->tag = 0;
             line->last_access_time = 0;
+            line->inserted_at = 0;
             //each line's bytes are its own slice of the one arena, laid out set by
             //set, so no line allocates or frees anything of its own
             line->block = block_arena + ((size_t)i * lines_per_set + j) * block_size;
@@ -274,7 +275,7 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_w
  * 
  * @param cache a pointer to the cache structure
  * @param addr The memory address being accessed.
- * @param policy Which line a full set gives up (POLICY_LRU, POLICY_RANDOM).
+ * @param policy Which line a full set gives up.
  * 
  * @returns *line_t: pointer to the line to be replaced/updated
  */
@@ -298,6 +299,7 @@ line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_p
     switch (policy) {
         case POLICY_LRU:    return least_recently_used(cur_set);
         case POLICY_RANDOM: return random_replacement(cur_set);
+        case POLICY_FIFO:   return first_in_first_out(cur_set);
     }
 
     return NULL;
@@ -322,6 +324,25 @@ line_t *least_recently_used(set_t *set)
         }
     }
     return lru_line;
+}
+
+/**
+ * @brief Returns the line whose current block entered the set first.
+ *
+ * Unlike LRU, FIFO does not react to hits. inserted_at changes only when a miss
+ * fills a line with a new block, so the smallest value is the oldest resident.
+ */
+line_t *first_in_first_out(set_t *set)
+{
+    line_t *first = &set->cache_lines[0];
+    for (int i = 1; i < set->lines_per_set; i++)
+    {
+        if (set->cache_lines[i].inserted_at < first->inserted_at)
+        {
+            first = &set->cache_lines[i];
+        }
+    }
+    return first;
 }
 
 /**
@@ -354,6 +375,7 @@ void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits,
     line->valid_bit = true;
     line->tag = tag_bits;
     line->last_access_time = ++cache->clock;
+    line->inserted_at = cache->clock;
 
     //block_data is block_size raw bytes, not a string: copy a counted length so a
     //zero byte inside the block neither truncates the copy nor, in its absence,

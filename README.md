@@ -56,7 +56,7 @@ than guessing which front end was meant.
 | `--size N` | total cache size in bytes (default: 256) |
 | `--block-size N` | bytes per block; a power of two (default: 32) |
 | `--associativity N` | lines per set (default: 2) |
-| `--policy LRU\|RANDOM` | replacement policy (default: LRU) |
+| `--policy LRU\|RANDOM\|FIFO` | replacement policy (default: LRU) |
 | `--memory-size N` | bytes of main memory (default: 1024) |
 | `--seed N` | seed for RANDOM replacement (default: 1) |
 | `-v`, `--verbose` | narrate the internals as well |
@@ -242,6 +242,10 @@ Two consequences worth knowing:
 - The three account for the **read** misses. A write miss under no-write-allocate
   fills nothing, so it has no placement decision to attribute; write misses are
   reported separately.
+- The breakdown is exact when the real cache also uses `LRU`. With `RANDOM` or
+  `FIFO`, the fully associative reference remains LRU, so a replacement-policy
+  miss can appear in the `conflict` column. The overall hits, misses and evictions
+  remain exact; only the explanation of a non-compulsory read miss is ambiguous.
 - The reference cache is fully associative, so finding a block in it means a linear
   scan of every block the cache holds. That costs about 0.6s for 500k accesses at
   32 KB and 3s at 256 KB. Fine at these sizes; a hash index over the ways is the
@@ -333,7 +337,8 @@ The rules each one has to satisfy:
   `block-size`, so the last block does not run past the end of memory. This also
   rules out a memory smaller than a single block.
 - `--policy`: `LRU` replaces the least recently used line, `RANDOM` one chosen at
-  random.
+  random, and `FIFO` the line that has been resident in its set the longest. A hit
+  refreshes LRU order but never FIFO insertion order.
 - `--seed`: Seeds the generator `RANDOM` draws from, so two runs of the same
   command agree. It is reported with the configuration, which is what makes a
   published number reproducible.

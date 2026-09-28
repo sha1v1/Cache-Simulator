@@ -45,6 +45,7 @@ const char *policy_name(replacement_policy_t policy){
     switch(policy){
         case POLICY_LRU:    return "LRU";
         case POLICY_RANDOM: return "RANDOM";
+        case POLICY_FIFO:   return "FIFO";
     }
     return "UNKNOWN";
 }
@@ -56,6 +57,10 @@ int parse_policy(const char *name, replacement_policy_t *out){
     }
     if(strcasecmp(name, "RANDOM") == 0){
         *out = POLICY_RANDOM;
+        return 0;
+    }
+    if(strcasecmp(name, "FIFO") == 0){
+        *out = POLICY_FIFO;
         return 0;
     }
     return -1;

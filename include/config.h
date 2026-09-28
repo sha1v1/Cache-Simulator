@@ -21,7 +21,8 @@
 //Which line a full set gives up on a miss.
 typedef enum {
     POLICY_LRU,      //evict the least recently used line
-    POLICY_RANDOM    //evict a line chosen at random
+    POLICY_RANDOM,   //evict a line chosen at random
+    POLICY_FIFO      //evict the line that entered the set first
 } replacement_policy_t;
 
 /**
@@ -75,8 +76,8 @@ int config_cache_size(const config_t *config);
 //Name of a policy, for help text and the run summary.
 const char *policy_name(replacement_policy_t policy);
 
-//Parses "LRU"/"RANDOM" (case-insensitively) into out. Returns 0, or -1 if the
-//name is not one of them.
+//Parses "LRU"/"RANDOM"/"FIFO" (case-insensitively) into out. Returns 0, or -1
+//if the name is not one of them.
 int parse_policy(const char *name, replacement_policy_t *out);
 
 #endif

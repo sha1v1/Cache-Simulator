@@ -95,6 +95,25 @@ void test_eviction_is_counted_once_the_set_is_full(void) {
     TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x080, NULL, NULL));
 }
 
+void test_FIFO_ignores_hits_when_choosing_a_victim(void) {
+    sim_free(&sim);
+    config_t config = {.num_sets = 1, .main_memory_size = 1024,
+                       .lines_per_set = 2, .block_size = DEFAULT_BLOCK_SIZE,
+                       .replacement_policy = POLICY_FIFO};
+    TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x00, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x20, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x00, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x00, NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x40, NULL));
+
+    TEST_ASSERT_EQUAL(0, check_cache(sim.cache, 0x00, NULL, NULL));
+    TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x20, NULL, NULL));
+    TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x40, NULL, NULL));
+    TEST_ASSERT_EQUAL(1, sim.stats.evictions);
+}
+
 void test_failed_access_counts_only_as_an_error(void) {
     access_info_t info;
 
@@ -431,6 +450,7 @@ int main(void) {
     RUN_TEST(test_read_miss_then_hit);
     RUN_TEST(test_write_through_no_write_allocate);
     RUN_TEST(test_eviction_is_counted_once_the_set_is_full);
+    RUN_TEST(test_FIFO_ignores_hits_when_choosing_a_victim);
     RUN_TEST(test_failed_access_counts_only_as_an_error);
     RUN_TEST(test_reset_empties_the_cache_and_the_stats);
     RUN_TEST(test_command_lines_drive_the_simulator);

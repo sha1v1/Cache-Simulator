@@ -143,6 +143,42 @@ void test_LRUReplacement(void) {
     
 }
 
+void test_FIFOReplacement(void) {
+    unsigned int address1 = 0x000; //all three map to set 0
+    unsigned int address2 = 0x080;
+    unsigned int address3 = 0x100;
+    uint8_t block1[DEFAULT_BLOCK_SIZE], block2[DEFAULT_BLOCK_SIZE];
+    make_block(block1, "Block1");
+    make_block(block2, "Block2");
+
+    line_t *first = handle_line_replacement(cache, address1, POLICY_FIFO);
+    update_cache(cache, first, get_tag_bits(&cache->layout, address1),
+                 block1, DEFAULT_BLOCK_SIZE);
+    line_t *second = handle_line_replacement(cache, address2, POLICY_FIFO);
+    update_cache(cache, second, get_tag_bits(&cache->layout, address2),
+                 block2, DEFAULT_BLOCK_SIZE);
+
+    uint64_t first_inserted = first->inserted_at;
+    TEST_ASSERT_EQUAL(1, check_cache(cache, address1, NULL, NULL));
+    TEST_ASSERT_EQUAL(1, check_cache(cache, address1, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT64(first_inserted, first->inserted_at);
+    TEST_ASSERT_TRUE(first->last_access_time > second->last_access_time);
+
+    /* address1 is now most recently used, but it still arrived first. FIFO must
+       choose it while LRU would choose address2. */
+    TEST_ASSERT_EQUAL_PTR(first,
+                          handle_line_replacement(cache, address3, POLICY_FIFO));
+    TEST_ASSERT_EQUAL_PTR(second,
+                          handle_line_replacement(cache, address3, POLICY_LRU));
+}
+
+void test_FIFO_policy_name_and_parser(void) {
+    replacement_policy_t policy = POLICY_LRU;
+    TEST_ASSERT_EQUAL(0, parse_policy("fifo", &policy));
+    TEST_ASSERT_EQUAL(POLICY_FIFO, policy);
+    TEST_ASSERT_EQUAL_STRING("FIFO", policy_name(policy));
+}
+
 
 
 void test_invalid_cache_access(void) {
@@ -187,6 +223,8 @@ int main(void) {
     RUN_TEST(test_update_cache);
     RUN_TEST(test_RandomReplacement);
     RUN_TEST(test_LRUReplacement);
+    RUN_TEST(test_FIFOReplacement);
+    RUN_TEST(test_FIFO_policy_name_and_parser);
     RUN_TEST(test_invalid_cache_access);
     RUN_TEST(test_cache_clocks_are_independent);
 

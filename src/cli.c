@@ -177,7 +177,8 @@ int parse_args(int argc, char **argv, options_t *opts){
                     return -1;
                 }
                 if(parse_policy(optarg, &opts->policy) != 0){
-                    log_error("Error: --policy expects LRU or RANDOM (got '%s')\n", optarg);
+                    log_error("Error: --policy expects LRU, RANDOM or FIFO (got '%s')\n",
+                              optarg);
                     return -1;
                 }
                 break;
@@ -311,7 +312,7 @@ void print_usage(const char *program){
            DEFAULT_BLOCK_SIZE);
     printf("      --associativity N   lines per set (default: %d)\n",
            DEFAULT_ASSOCIATIVITY);
-    printf("      --policy NAME       LRU or RANDOM (default: LRU)\n");
+    printf("      --policy NAME       LRU, RANDOM or FIFO (default: LRU)\n");
     printf("  The number of sets follows from these: size / (block-size x associativity).\n");
     printf("\nOther options\n");
     printf("      --memory-size N     bytes of main memory (default: %d)\n",
