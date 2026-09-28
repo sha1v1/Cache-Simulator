@@ -1,8 +1,12 @@
 #include "../include/cache.h"
-#include "../include/memory.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int address_layout_init(address_layout_t *layout, int block_size,
+                               int num_sets);
+static line_t *random_replacement(set_t *set);
+static line_t *least_recently_used(set_t *set);
+static line_t *first_in_first_out(set_t *set);
 
 /**
  * @brief Initialize all sets within the cache.
@@ -16,8 +20,8 @@
  * Iterate over all sets, initalize the valid bit, tag bits, data block and
  * the last access times for all lines within the same.
  */
-int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
-                    uint8_t *block_arena, int block_size)
+static int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
+                           uint8_t *block_arena, int block_size)
 {
     //every set starts empty, so a caller unwinding a partial failure can free
     //the whole array without reading an uninitialized pointer
@@ -67,7 +71,7 @@ int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
  *
  * Initialize the num_sets and lines_per_set fields and then inialize all Sets by calling initialize_sets().
  */
-cache_t *initialize_cache(config_t *config)
+cache_t *initialize_cache(const config_t *config)
 {
     //sim_init validates the configuration and can name the setting at fault.
     //This guard only refuses an unusable one, so that a caller reaching straight
@@ -175,7 +179,7 @@ static bool is_power_of_two(int n)
     return n > 0 && (n & (n - 1)) == 0;
 }
 
-int address_layout_init(address_layout_t *layout, int block_size, int num_sets)
+static int address_layout_init(address_layout_t *layout, int block_size, int num_sets)
 {
     if (!layout || !is_power_of_two(block_size) || !is_power_of_two(num_sets))
     {
@@ -213,23 +217,6 @@ unsigned int get_block_address(const address_layout_t *layout, int set_index,
     return (tag << layout->tag_shift)
          | ((unsigned int)set_index << layout->offset_bits);
 }
-
-/**
- * In case of a cache miss, fetch the line of data from memory
- * and populate the said block
- */
-// void handle_cache_miss(int addr, line_t *line, int tagbits){
-//     line->valid_bit = true;
-//     line->tag = tagbits;
-
-//     int block_start_address = addr & ~31;
-//     for (int i = 0; i < 32; i++) {       // 32 bytes per block
-//         line->block[i] = read_from_memory(memory, block_start_address + i);
-//     }
-//     printf("Loaded block from main memory to cache\n");
-
-// }
-
 
 /**
  * @brief given an address, check if we have the cached value for the same.
@@ -322,7 +309,7 @@ line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_p
  * To do so, we make use of 'last_access_time' field of each line_t, and select the one with the
  * least value.
  */
-line_t *least_recently_used(set_t *set)
+static line_t *least_recently_used(set_t *set)
 {
     line_t *lru_line = &set->cache_lines[0];
     for (int i = 1; i < set->lines_per_set; i++)
@@ -341,7 +328,7 @@ line_t *least_recently_used(set_t *set)
  * Unlike LRU, FIFO does not react to hits. inserted_at changes only when a miss
  * fills a line with a new block, so the smallest value is the oldest resident.
  */
-line_t *first_in_first_out(set_t *set)
+static line_t *first_in_first_out(set_t *set)
 {
     line_t *first = &set->cache_lines[0];
     for (int i = 1; i < set->lines_per_set; i++)
@@ -359,7 +346,7 @@ line_t *first_in_first_out(set_t *set)
  *
  * @param set a pointer to the set_t
  */
-line_t *random_replacement(set_t *set)
+static line_t *random_replacement(set_t *set)
 {
     // this runs if an empty line wasn't found
     int line_to_replace_index = rand() % set->lines_per_set;

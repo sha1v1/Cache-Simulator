@@ -3,7 +3,6 @@
 #include "../src/unity/unity.h"
 #include "../include/memory.h"
 #include <limits.h>
-#include <stdio.h>
 
 memory_t memory;
 config_t config;

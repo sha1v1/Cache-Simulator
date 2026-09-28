@@ -1,8 +1,5 @@
 #include "../include/memory.h"
-#include "../include/config.h"
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 //initialize main memory
 /**
@@ -15,7 +12,7 @@
  * the page_table which is essentially an array of pointers to all these pages. These pointers are
  * initialized to NULL.
  */
-int initialize_memory(memory_t *memory, config_t *config){
+int initialize_memory(memory_t *memory, const config_t *config){
     //fetch_block_from_memory aligns down to a block boundary and always reads
     //block_size bytes, so a memory that doesn't end on a block boundary would
     //have its last block run past the end and store read_from_memory's error

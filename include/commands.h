@@ -2,7 +2,6 @@
 #define COMMANDS_H
 
 #include <stdbool.h>
-#include <stdio.h>
 #include "sim.h"
 
 //What executing one command line produced.

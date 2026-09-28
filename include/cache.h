@@ -1,7 +1,8 @@
-#ifndef  CACHE_H
+#ifndef CACHE_H
 #define CACHE_H
 #include <stdbool.h>
-#include "memory.h"
+#include <stdint.h>
+#include "config.h"
 
 /**
  * How an address divides into the three fields the cache indexes by:
@@ -26,16 +27,6 @@ typedef struct {
     unsigned int offset_mask;   //keeps just the block offset bits
     unsigned int set_mask;      //keeps just the set index, once shifted down
 } address_layout_t;
-
-/**
- * @brief Works a layout out from a block size and a set count.
- *
- * @param layout the layout to fill
- * @param block_size bytes per block; must be a positive power of two
- * @param num_sets sets in the cache; must be a positive power of two
- * @return int 0, or -1 if either size is unusable
- */
-int address_layout_init(address_layout_t *layout, int block_size, int num_sets);
 
 typedef struct {
     bool valid_bit;
@@ -64,16 +55,7 @@ typedef struct {
 } cache_t;
 
 
-cache_t* initialize_cache(config_t *config);
-
-/**
- * @brief Points every line at its slice of the block arena and empties it.
- *
- * @param block_arena num_sets * lines_per_set * block_size bytes, owned by the
- *        caller for as long as the sets are in use
- */
-int initialize_sets(set_t* sets, int num_sets, int lines_per_set,
-                    uint8_t *block_arena, int block_size);
+cache_t *initialize_cache(const config_t *config);
 
 int get_set_index(const address_layout_t *layout, unsigned int addr);
 int get_block_offset(const address_layout_t *layout, unsigned int addr);
@@ -85,9 +67,6 @@ unsigned int get_block_address(const address_layout_t *layout, int set_index,
 int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_way);
 
 line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_policy_t policy);
-line_t *random_replacement(set_t *set);
-line_t *least_recently_used(set_t *set);
-line_t *first_in_first_out(set_t *set);
 void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits,
                   const uint8_t *block_data, int block_size);
 void free_cache(cache_t *cache);

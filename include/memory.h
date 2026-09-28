@@ -17,7 +17,7 @@ typedef struct {
 } memory_t;
 
 //Returns 0 on success, or -1 if the size is unusable or allocation failed.
-int initialize_memory(memory_t *memory, config_t *config);
+int initialize_memory(memory_t *memory, const config_t *config);
 int allocate_page(memory_t *memory, int page_index);
 int read_from_memory(memory_t *memory, int address);
 int write_to_memory(memory_t *memory, int address, uint8_t value);

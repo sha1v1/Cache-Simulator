@@ -68,8 +68,4 @@ void report_startup_error(sim_status_t status, const config_t *config);
 //Why a single access failed.
 void report_access_error(sim_status_t status, unsigned int addr);
 
-//A config file that could not be read. detail may be NULL, for a file that could
-//not be opened at all.
-void report_config_file_error(const char *path, const char *detail);
-
 #endif

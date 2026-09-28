@@ -298,12 +298,3 @@ void report_startup_error(sim_status_t status, const config_t *config){
 void report_access_error(sim_status_t status, unsigned int addr){
     log_error("Error: 0x%X: %s\n", addr, sim_status_message(status));
 }
-
-void report_config_file_error(const char *path, const char *detail){
-    if(detail){
-        log_error("Error: %s: %s\n", path, detail);
-    }
-    else{
-        log_error("Error: could not read %s\n", path);
-    }
-}
