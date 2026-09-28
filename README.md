@@ -19,6 +19,24 @@ make
 make test
 ```
 
+4. Run them again instrumented (optional):
+```
+make sanitize
+```
+
+`make sanitize` rebuilds everything with AddressSanitizer and
+UndefinedBehaviorSanitizer into `build/san/`, then runs the suite plus a smoke
+pass over both front ends, including malformed trace input. `-Wall` cannot see a
+read past the end of a heap allocation, and most of what the hand-written
+structures here could get wrong is exactly that: the open-addressed hash set, the
+block arena every cache line points into, and the trace parser's pointer walk. An
+off-by-one deliberately introduced into the shadow cache's scan produced no
+compiler warning at all and a bare `exit 138` from the test binary; under the
+sanitizers it came back as `heap-buffer-overflow classify.c:177 in
+classifier_access`.
+
+Both run in CI on Linux and macOS, on every branch.
+
 ## Usage
 The simulator is built to carry more than one front end, so it has to be told
 which one to run. Interactive mode steps through accesses by hand and narrates

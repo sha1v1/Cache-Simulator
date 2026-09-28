@@ -1,68 +1,34 @@
-name: C Tests Pipeline
+name: CI
 
+# Every branch, not just main. A feature branch that cannot be tested until it
+# opens a pull request is a branch developed blind.
 on:
   push:
-    branches:
-      - main
   pull_request:
-    branches:
-      - main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
+  # Both platforms, because this is POSIX C and the two libcs differ in ways that
+  # compile silently: getopt_long's argument permutation and strcasecmp are both
+  # extensions, and a difference in either would only show up by running it.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc make
-
-      - name: Build Project
+      - uses: actions/checkout@v4
+      - name: Build
         run: make
+      - name: Unit tests
+        run: make test
 
-  memory-test:
-    needs: build
+  # -Wall cannot see a read past the end of a heap allocation, which is most of
+  # what the hand-written structures here could get wrong. On Linux this also
+  # brings LeakSanitizer, which is off by default on macOS.
+  sanitize:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc make
-
-      - name: Compile and Run Memory Tests
-        run: |
-          make build/test_memory
-          ./build/test_memory
-
-  cache-test:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc make
-
-      - name: Compile and Run Cache Tests
-        run: |
-          make build/test_cache
-          ./build/test_cache
-
-  sim-test:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc make
-
-      - name: Compile and Run Simulator Tests
-        run: |
-          make build/test_sim
-          ./build/test_sim
+      - uses: actions/checkout@v4
+      - name: Tests and smoke runs under ASan and UBSan
+        run: make sanitize
