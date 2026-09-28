@@ -3,7 +3,7 @@
 
 int initialize_memory(memory_t *memory, const config_t *config) {
     // A partial final block could not be fetched safely.
-    if (config->block_size <= 0 || config->main_memory_size <= 0 ||
+    if (!memory || !config || config->block_size <= 0 || config->main_memory_size <= 0 ||
         config->main_memory_size % config->block_size != 0) {
         return -1;
     }

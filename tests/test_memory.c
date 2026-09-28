@@ -21,6 +21,14 @@ void test_initialize_memory() {
     TEST_ASSERT_EQUAL(1024, memory.total_size);
 }
 
+void test_initialize_memory_rejects_null_inputs() {
+    memory_t uninitialized = {0};
+
+    TEST_ASSERT_EQUAL(-1, initialize_memory(NULL, &config));
+    TEST_ASSERT_EQUAL(-1, initialize_memory(&uninitialized, NULL));
+    TEST_ASSERT_NULL(uninitialized.page_table);
+}
+
 void test_read_from_memory(void) {
     int value = read_from_memory(&memory, 500);
     TEST_ASSERT(value >= 32 && value <= 126);
@@ -139,6 +147,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_initialize_memory);
+    RUN_TEST(test_initialize_memory_rejects_null_inputs);
     RUN_TEST(test_read_from_memory);
     RUN_TEST(test_write_to_memory);
     RUN_TEST(test_write_block_to_memory);
