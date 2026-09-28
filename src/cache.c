@@ -102,7 +102,6 @@ static int address_layout_init(address_layout_t *layout, int block_size, int num
     }
 
     layout->block_size = block_size;
-    layout->num_sets = num_sets;
     layout->offset_bits = exact_log2(block_size);
     layout->set_bits = exact_log2(num_sets);
     layout->tag_shift = layout->offset_bits + layout->set_bits;

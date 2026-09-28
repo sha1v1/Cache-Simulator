@@ -8,7 +8,6 @@
 // must both be powers of two because decoding uses masks.
 typedef struct {
     int block_size;           // bytes per block
-    int num_sets;             // sets in the cache
     int offset_bits;          // log2(block_size)
     int set_bits;             // log2(num_sets)
     int tag_shift;            // offset_bits + set_bits: what the tag sits above
