@@ -46,10 +46,11 @@ $(BUILDDIR)/test_%: $(TESTDIR)/test_%.c $(LIBOBJS) $(UNITYOBJ) | $(BUILDDIR)
 
 tests: $(TESTBINS)
 
-test: $(TESTBINS)
+test: $(TESTBINS) $(GENTARGET)
 	$(BUILDDIR)/test_cache
 	$(BUILDDIR)/test_memory
 	$(BUILDDIR)/test_sim
+	sh $(TESTDIR)/test_gen_trace.sh $(GENTARGET)
 
 # A second build of everything, instrumented. Kept in its own directory so the
 # instrumented objects can never be linked into the ordinary binary, and so a
@@ -101,6 +102,7 @@ sanitize: $(SANTESTS) $(SANDIR)/cache_sim $(SANDIR)/gen_trace
 	@$(SANENV) $(SANDIR)/gen_trace matmul-tiled 16 4 \
 	    | $(SANENV) $(SANDIR)/cache_sim - --size 1024 --block-size 32 \
 	      --associativity 4 --memory-size 16384 >/dev/null
+	@sh $(TESTDIR)/test_gen_trace.sh $(SANDIR)/gen_trace
 	@echo "sanitizers: clean"
 
 clean:

@@ -10,7 +10,11 @@
  *     ./build/gen_trace matmul-naive 64 | ./build/cache_sim - --size 4096
  */
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,43 +23,74 @@
 //eight a double; both are common and neither is a cache parameter.
 #define DEFAULT_WORD    4
 #define DEFAULT_ELEMENT 8
+#define MAX_ACCESS_SIZE 256
 
-static unsigned long g_highest = 0;   //highest byte any access touched
-static unsigned long g_accesses = 0;
+static uint64_t g_highest = 0;   //highest byte any access touched
+static uint64_t g_accesses = 0;
 
 //Records an access. The byte count goes out with it: an access straddling a block
 //boundary is two cache lookups, and only the simulator knows where the boundaries
 //are, so the width has to travel with the address.
-static void emit(char op, unsigned long addr, unsigned long bytes){
-    unsigned long last = addr + bytes - 1;
+static void emit(char op, uint64_t addr, uint64_t bytes){
+    uint64_t last = addr + bytes - 1;
     if(last > g_highest){
         g_highest = last;
     }
     g_accesses++;
-    printf("%c 0x%lx %lu\n", op, addr, bytes);
+    printf("%c 0x%" PRIx64 " %" PRIu64 "\n", op, addr, bytes);
 }
 
-static void die(const char *fmt, const char *arg){
+static void die(const char *fmt, ...){
+    va_list args;
     fprintf(stderr, "Error: ");
-    fprintf(stderr, fmt, arg);
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
     fprintf(stderr, "\n");
     exit(1);
 }
 
 //A positional parameter, or its default when the argument was not given.
-static unsigned long param(int argc, char **argv, int index, unsigned long fallback,
-                           const char *name){
+static uint64_t param(int argc, char **argv, int index, uint64_t fallback,
+                      const char *name){
     if(index >= argc){
         return fallback;
     }
+    if(argv[index][0] == '-'){
+        die("%s must be a positive whole number", name);
+    }
     errno = 0;
     char *end = NULL;
-    unsigned long value = strtoul(argv[index], &end, 0);
+    unsigned long long value = strtoull(argv[index], &end, 0);
     if(end == argv[index] || *end != '\0' || errno == ERANGE || value == 0){
         die("%s must be a positive whole number", name);
     }
-    (void)name;
-    return value;
+    return (uint64_t)value;
+}
+
+static void reject_extra_args(int argc, int maximum, const char *workload){
+    if(argc > maximum){
+        die("%s received too many parameters", workload);
+    }
+}
+
+static void validate_region(uint64_t bytes, uint64_t word){
+    if(word > bytes){
+        die("WORD cannot exceed BYTES");
+    }
+    if(word > MAX_ACCESS_SIZE){
+        die("WORD cannot exceed %d bytes", MAX_ACCESS_SIZE);
+    }
+    if(bytes > (uint64_t)UINT_MAX + 1u){
+        die("BYTES exceeds the simulator's address space");
+    }
+}
+
+static uint64_t checked_product(uint64_t left, uint64_t right, const char *name){
+    if(right != 0 && left > UINT64_MAX / right){
+        die("%s is too large", name);
+    }
+    return left * right;
 }
 
 /* ---------------------------------------------------------------- array walks */
@@ -63,8 +98,8 @@ static unsigned long param(int argc, char **argv, int index, unsigned long fallb
 //One pass over a region, in word-sized reads. Every block is touched once and in
 //order, so the misses are compulsory and the hit rate is set by how many words
 //share a block: pure spatial locality.
-static void sequential(unsigned long base, unsigned long bytes, unsigned long word){
-    for(unsigned long offset = 0; offset + word <= bytes; offset += word){
+static void sequential(uint64_t base, uint64_t bytes, uint64_t word){
+    for(uint64_t offset = 0; offset <= bytes - word; offset += word){
         emit('R', base + offset, word);
     }
 }
@@ -73,9 +108,9 @@ static void sequential(unsigned long base, unsigned long bytes, unsigned long wo
 //throughout; if it does not, each pass evicts what the next one wants, and the
 //misses that result are capacity misses - they would happen however the cache
 //were organised.
-static void loop_region(unsigned long base, unsigned long bytes, unsigned long passes,
-                        unsigned long word){
-    for(unsigned long pass = 0; pass < passes; pass++){
+static void loop_region(uint64_t base, uint64_t bytes, uint64_t passes,
+                        uint64_t word){
+    for(uint64_t pass = 0; pass < passes; pass++){
         sequential(base, bytes, word);
     }
 }
@@ -83,19 +118,22 @@ static void loop_region(unsigned long base, unsigned long bytes, unsigned long p
 //Reads spaced by a fixed stride, wrapping at the end of the region. A stride that
 //is a multiple of the bytes one set spans lands every access on the same set,
 //which produces conflict misses while most of the cache stands empty.
-static void strided(unsigned long base, unsigned long bytes, unsigned long stride,
-                    unsigned long count, unsigned long word){
-    unsigned long offset = 0;
-    for(unsigned long i = 0; i < count; i++){
+static void strided(uint64_t base, uint64_t bytes, uint64_t stride,
+                    uint64_t count, uint64_t word){
+    uint64_t offset = 0;
+    for(uint64_t i = 0; i < count; i++){
         emit('R', base + offset, word);
-        offset += stride;
-        if(offset + word > bytes){
+        uint64_t next = offset + stride;
+        if(next > bytes - word){
             //step forward a word on wrapping, so the walk does not retrace the
             //same handful of addresses forever
-            offset = (offset % stride) + word;
-            if(offset + word > bytes){
+            offset = (next % stride) + word;
+            if(offset > bytes - word){
                 offset = 0;
             }
+        }
+        else{
+            offset = next;
         }
     }
 }
@@ -103,12 +141,12 @@ static void strided(unsigned long base, unsigned long bytes, unsigned long strid
 //Uniformly random reads: no locality of either kind, so nothing but capacity and
 //conflict misses once the footprint exceeds the cache. The baseline every other
 //pattern should beat.
-static void random_region(unsigned long base, unsigned long bytes, unsigned long count,
-                          unsigned long word, unsigned long seed){
+static void random_region(uint64_t base, uint64_t bytes, uint64_t count,
+                          uint64_t word, uint64_t seed){
     srand((unsigned int)seed);
-    unsigned long slots = bytes / word;
-    for(unsigned long i = 0; i < count; i++){
-        unsigned long slot = (unsigned long)rand() % slots;
+    uint64_t slots = bytes / word;
+    for(uint64_t i = 0; i < count; i++){
+        uint64_t slot = (uint64_t)rand() % slots;
         emit('R', base + slot * word, word);
     }
 }
@@ -125,15 +163,15 @@ static void random_region(unsigned long base, unsigned long bytes, unsigned long
  * access lands in a different block, and by the time the next j revisits those
  * blocks they have been evicted.
  */
-static void matmul_naive(unsigned long n, unsigned long element){
-    unsigned long row = n * element;
-    unsigned long matrix = n * row;
-    unsigned long a = 0, b = matrix, c = 2 * matrix;
+static void matmul_naive(uint64_t n, uint64_t element){
+    uint64_t row = n * element;
+    uint64_t matrix = n * row;
+    uint64_t a = 0, b = matrix, c = 2 * matrix;
 
-    for(unsigned long i = 0; i < n; i++){
-        for(unsigned long j = 0; j < n; j++){
+    for(uint64_t i = 0; i < n; i++){
+        for(uint64_t j = 0; j < n; j++){
             emit('R', c + i * row + j * element, element);
-            for(unsigned long k = 0; k < n; k++){
+            for(uint64_t k = 0; k < n; k++){
                 emit('R', a + i * row + k * element, element);
                 emit('R', b + k * row + j * element, element);
             }
@@ -149,21 +187,21 @@ static void matmul_naive(unsigned long n, unsigned long element){
  * ones; only their order changes, which is precisely why this is worth measuring -
  * the difference in miss rate is attributable to nothing else.
  */
-static void matmul_tiled(unsigned long n, unsigned long tile, unsigned long element){
-    unsigned long row = n * element;
-    unsigned long matrix = n * row;
-    unsigned long a = 0, b = matrix, c = 2 * matrix;
+static void matmul_tiled(uint64_t n, uint64_t tile, uint64_t element){
+    uint64_t row = n * element;
+    uint64_t matrix = n * row;
+    uint64_t a = 0, b = matrix, c = 2 * matrix;
 
-    for(unsigned long ii = 0; ii < n; ii += tile){
-        unsigned long i_end = (ii + tile < n) ? ii + tile : n;
-        for(unsigned long jj = 0; jj < n; jj += tile){
-            unsigned long j_end = (jj + tile < n) ? jj + tile : n;
-            for(unsigned long kk = 0; kk < n; kk += tile){
-                unsigned long k_end = (kk + tile < n) ? kk + tile : n;
-                for(unsigned long i = ii; i < i_end; i++){
-                    for(unsigned long j = jj; j < j_end; j++){
+    for(uint64_t ii = 0; ii < n; ii += tile){
+        uint64_t i_end = (tile < n - ii) ? ii + tile : n;
+        for(uint64_t jj = 0; jj < n; jj += tile){
+            uint64_t j_end = (tile < n - jj) ? jj + tile : n;
+            for(uint64_t kk = 0; kk < n; kk += tile){
+                uint64_t k_end = (tile < n - kk) ? kk + tile : n;
+                for(uint64_t i = ii; i < i_end; i++){
+                    for(uint64_t j = jj; j < j_end; j++){
                         emit('R', c + i * row + j * element, element);
-                        for(unsigned long k = kk; k < k_end; k++){
+                        for(uint64_t k = kk; k < k_end; k++){
                             emit('R', a + i * row + k * element, element);
                             emit('R', b + k * row + j * element, element);
                         }
@@ -200,6 +238,77 @@ int main(int argc, char **argv){
     }
 
     const char *workload = argv[1];
+    enum { WORK_SEQUENTIAL, WORK_LOOP, WORK_STRIDED, WORK_RANDOM,
+           WORK_MATMUL_NAIVE, WORK_MATMUL_TILED } kind;
+    uint64_t first = 0, second = 0, third = 0, fourth = 0;
+
+    //Parse and validate everything before writing the trace header. Invalid input
+    //must not leave a plausible-looking partial trace on standard output.
+    if(strcmp(workload, "sequential") == 0){
+        reject_extra_args(argc, 4, workload);
+        first = param(argc, argv, 2, 4096, "BYTES");
+        second = param(argc, argv, 3, DEFAULT_WORD, "WORD");
+        validate_region(first, second);
+        kind = WORK_SEQUENTIAL;
+    }
+    else if(strcmp(workload, "loop") == 0){
+        reject_extra_args(argc, 5, workload);
+        first = param(argc, argv, 2, 4096, "BYTES");
+        second = param(argc, argv, 3, 4, "PASSES");
+        third = param(argc, argv, 4, DEFAULT_WORD, "WORD");
+        validate_region(first, third);
+        kind = WORK_LOOP;
+    }
+    else if(strcmp(workload, "strided") == 0){
+        reject_extra_args(argc, 6, workload);
+        first = param(argc, argv, 2, 65536, "BYTES");
+        second = param(argc, argv, 3, 1024, "STRIDE");
+        if(second > first){
+            die("STRIDE cannot exceed BYTES");
+        }
+        uint64_t default_count = checked_product(4, first / second, "COUNT");
+        third = param(argc, argv, 4, default_count, "COUNT");
+        fourth = param(argc, argv, 5, DEFAULT_WORD, "WORD");
+        validate_region(first, fourth);
+        kind = WORK_STRIDED;
+    }
+    else if(strcmp(workload, "random") == 0){
+        reject_extra_args(argc, 6, workload);
+        first = param(argc, argv, 2, 65536, "BYTES");
+        second = param(argc, argv, 3, 4096, "COUNT");
+        third = param(argc, argv, 4, 1, "SEED");
+        fourth = param(argc, argv, 5, DEFAULT_WORD, "WORD");
+        validate_region(first, fourth);
+        if(third > UINT_MAX){
+            die("SEED cannot exceed %u", UINT_MAX);
+        }
+        kind = WORK_RANDOM;
+    }
+    else if(strcmp(workload, "matmul-naive") == 0 ||
+            strcmp(workload, "matmul-tiled") == 0){
+        bool tiled = strcmp(workload, "matmul-tiled") == 0;
+        reject_extra_args(argc, tiled ? 5 : 4, workload);
+        first = param(argc, argv, 2, 32, "N");
+        second = tiled ? param(argc, argv, 3, 8, "TILE") : 0;
+        third = param(argc, argv, tiled ? 4 : 3, DEFAULT_ELEMENT, "ELEMENT");
+        if(tiled && second > first){
+            die("TILE cannot exceed N");
+        }
+        if(third > MAX_ACCESS_SIZE){
+            die("ELEMENT cannot exceed %d bytes", MAX_ACCESS_SIZE);
+        }
+        uint64_t matrix = checked_product(checked_product(first, first, "matrix"),
+                                          third, "matrix");
+        uint64_t footprint = checked_product(matrix, 3, "matrix footprint");
+        if(footprint > (uint64_t)UINT_MAX + 1u){
+            die("matrix footprint exceeds the simulator's address space");
+        }
+        kind = tiled ? WORK_MATMUL_TILED : WORK_MATMUL_NAIVE;
+    }
+    else{
+        die("unknown workload '%s'", workload);
+    }
+
     //buffered generously: these traces run to millions of lines, and the default
     //buffer would mean a write syscall every few accesses
     static char out[1 << 20];
@@ -212,52 +321,18 @@ int main(int argc, char **argv){
     }
     printf("\n");
 
-    if(strcmp(workload, "sequential") == 0){
-        unsigned long bytes = param(argc, argv, 2, 4096, "BYTES");
-        unsigned long word = param(argc, argv, 3, DEFAULT_WORD, "WORD");
-        sequential(0, bytes, word);
-    }
-    else if(strcmp(workload, "loop") == 0){
-        unsigned long bytes = param(argc, argv, 2, 4096, "BYTES");
-        unsigned long passes = param(argc, argv, 3, 4, "PASSES");
-        unsigned long word = param(argc, argv, 4, DEFAULT_WORD, "WORD");
-        loop_region(0, bytes, passes, word);
-    }
-    else if(strcmp(workload, "strided") == 0){
-        unsigned long bytes = param(argc, argv, 2, 65536, "BYTES");
-        unsigned long stride = param(argc, argv, 3, 1024, "STRIDE");
-        unsigned long count = param(argc, argv, 4, 4 * (bytes / stride ? bytes / stride : 1),
-                                    "COUNT");
-        unsigned long word = param(argc, argv, 5, DEFAULT_WORD, "WORD");
-        strided(0, bytes, stride, count, word);
-    }
-    else if(strcmp(workload, "random") == 0){
-        unsigned long bytes = param(argc, argv, 2, 65536, "BYTES");
-        unsigned long count = param(argc, argv, 3, 4096, "COUNT");
-        unsigned long seed = param(argc, argv, 4, 1, "SEED");
-        unsigned long word = param(argc, argv, 5, DEFAULT_WORD, "WORD");
-        random_region(0, bytes, count, word, seed);
-    }
-    else if(strcmp(workload, "matmul-naive") == 0){
-        unsigned long n = param(argc, argv, 2, 32, "N");
-        unsigned long element = param(argc, argv, 3, DEFAULT_ELEMENT, "ELEMENT");
-        matmul_naive(n, element);
-    }
-    else if(strcmp(workload, "matmul-tiled") == 0){
-        unsigned long n = param(argc, argv, 2, 32, "N");
-        unsigned long tile = param(argc, argv, 3, 8, "TILE");
-        unsigned long element = param(argc, argv, 4, DEFAULT_ELEMENT, "ELEMENT");
-        if(tile > n){
-            die("TILE cannot exceed N%s", "");
-        }
-        matmul_tiled(n, tile, element);
-    }
-    else{
-        die("unknown workload '%s'", workload);
+    switch(kind){
+        case WORK_SEQUENTIAL:   sequential(0, first, second); break;
+        case WORK_LOOP:         loop_region(0, first, second, third); break;
+        case WORK_STRIDED:      strided(0, first, second, third, fourth); break;
+        case WORK_RANDOM:       random_region(0, first, second, fourth, third); break;
+        case WORK_MATMUL_NAIVE: matmul_naive(first, third); break;
+        case WORK_MATMUL_TILED: matmul_tiled(first, second, third); break;
     }
 
     //the footprint, so the reader knows what --memory-size the trace needs
-    printf("# %lu accesses, highest address 0x%lx (%lu bytes of memory needed)\n",
+    printf("# %" PRIu64 " accesses, highest address 0x%" PRIx64
+           " (%" PRIu64 " bytes of memory needed)\n",
            g_accesses, g_highest, g_highest + 1);
     return 0;
 }
