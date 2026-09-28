@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wno-error -O2
+DEPFLAGS = -MMD -MP
 LDLIBS = -lm
 
 SRCDIR   = src
@@ -22,6 +23,7 @@ TARGET    = $(BUILDDIR)/cache_sim
 GENTARGET = $(BUILDDIR)/gen_trace
 UNITYOBJ  = $(BUILDDIR)/unity.o
 TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_memory $(BUILDDIR)/test_sim
+HEADERS   = $(wildcard include/*.h)
 
 all: $(TARGET) $(GENTARGET)
 
@@ -35,13 +37,13 @@ $(GENTARGET): $(SRCDIR)/gen_trace.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(UNITYOBJ): $(UNITYDIR)/unity.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Test binaries land in $(BUILDDIR) alongside every other build output.
-$(BUILDDIR)/test_%: $(TESTDIR)/test_%.c $(LIBOBJS) $(UNITYOBJ) | $(BUILDDIR)
+$(BUILDDIR)/test_%: $(TESTDIR)/test_%.c $(LIBOBJS) $(UNITYOBJ) $(HEADERS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LIBOBJS) $(UNITYOBJ) $(LDLIBS)
 
 tests: $(TESTBINS)
@@ -65,15 +67,15 @@ $(SANDIR):
 	mkdir -p $(SANDIR)
 
 $(SANDIR)/%.o: $(SRCDIR)/%.c | $(SANDIR)
-	$(CC) $(CFLAGS) $(SANFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(SANFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(SANDIR)/unity.o: $(UNITYDIR)/unity.c | $(SANDIR)
-	$(CC) $(CFLAGS) $(SANFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(SANFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(SANDIR)/cache_sim: $(SANOBJS) | $(SANDIR)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $(SANOBJS) $(LDLIBS)
 
-$(SANDIR)/test_%: $(TESTDIR)/test_%.c $(SANLIBOBJS) $(SANDIR)/unity.o | $(SANDIR)
+$(SANDIR)/test_%: $(TESTDIR)/test_%.c $(SANLIBOBJS) $(SANDIR)/unity.o $(HEADERS) | $(SANDIR)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SANLIBOBJS) $(SANDIR)/unity.o $(LDLIBS)
 
 $(SANDIR)/gen_trace: $(SRCDIR)/gen_trace.c | $(SANDIR)
@@ -109,3 +111,7 @@ clean:
 	rm -rf $(BUILDDIR)
 
 .PHONY: all clean test tests sanitize
+
+# Header dependencies emitted beside each object keep incremental builds from
+# linking objects compiled against different public struct layouts.
+-include $(OBJS:.o=.d) $(SANOBJS:.o=.d) $(UNITYOBJ:.o=.d) $(SANDIR)/unity.d

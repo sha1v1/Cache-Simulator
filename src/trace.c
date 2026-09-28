@@ -154,18 +154,33 @@ int run_trace(simulator_t *sim, FILE *stream, const char *name,
     char line[TRACE_LINE_MAX];
     unsigned long lineno = 0;
     unsigned long complaints = 0;
+    bool io_error = false;
 
     while(fgets(line, sizeof(line), stream)){
         lineno++;
 
-        //a line longer than the buffer would otherwise return as two, the second
-        //of which is not a record the file contains
+        //A full buffer without a newline is ambiguous: it may be an over-long
+        //line, or a final line that fits exactly and simply has no newline. Peek
+        //once to distinguish them. An over-long line is discarded in full and is
+        //never allowed to execute as the valid-looking prefix in the buffer.
         if(!strchr(line, '\n') && !feof(stream)){
-            int c;
-            while((c = fgetc(stream)) != '\n' && c != EOF){
-                //discard the remainder
+            int c = fgetc(stream);
+            if(c != EOF){
+                while(c != '\n' && (c = fgetc(stream)) != EOF){
+                    //discard the remainder
+                }
+                summary->truncated++;
+                if(complaints < COMPLAINTS_MAX){
+                    log_error("%s:%lu: line exceeds %d bytes and was not run\n",
+                              name, lineno, TRACE_LINE_MAX - 1);
+                    complaints++;
+                }
+                continue;
             }
-            summary->truncated++;
+            if(ferror(stream)){
+                io_error = true;
+                continue;
+            }
         }
 
         trace_record_t rec;
@@ -194,11 +209,20 @@ int run_trace(simulator_t *sim, FILE *stream, const char *name,
         run_record(sim, &rec, name, lineno, summary, &complaints);
     }
 
+    if(io_error || ferror(stream)){
+        summary->io_errors++;
+        if(complaints < COMPLAINTS_MAX){
+            log_error("%s: error while reading trace\n", name);
+            complaints++;
+        }
+    }
+
     if(complaints >= COMPLAINTS_MAX){
         log_error("%s: further complaints suppressed\n", name);
     }
 
     //a trace only partly read, or partly refused, has not been fully run, and a
     //statistic from it should not be taken as though it had
-    return (summary->malformed > 0 || summary->failed > 0) ? -1 : 0;
+    return (summary->malformed > 0 || summary->failed > 0
+            || summary->truncated > 0 || summary->io_errors > 0) ? -1 : 0;
 }

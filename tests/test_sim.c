@@ -386,6 +386,42 @@ void test_record_ending_at_the_top_address_terminates(void) {
     TEST_ASSERT_EQUAL(2, summary.failed);
 }
 
+/* The prefix of an over-long line can be a complete, valid record. Running that
+   prefix would make a trace the parser did not actually read affect the result. */
+void test_overlong_trace_line_is_not_run(void) {
+    char text[400];
+    const char *prefix = "R 0x0 #";
+    size_t prefix_len = strlen(prefix);
+    memcpy(text, prefix, prefix_len);
+    memset(text + prefix_len, 'x', sizeof(text) - prefix_len - 2);
+    text[sizeof(text) - 2] = '\n';
+    text[sizeof(text) - 1] = '\0';
+
+    trace_summary_t summary;
+    TEST_ASSERT_EQUAL(-1, run_trace_text(text, &summary));
+    TEST_ASSERT_EQUAL(1, summary.truncated);
+    TEST_ASSERT_EQUAL(0, summary.records);
+    TEST_ASSERT_EQUAL(0, summary.accesses);
+    TEST_ASSERT_EQUAL(0, sim.stats.reads);
+}
+
+/* A final line may fill the buffer exactly without ending in a newline. Peeking
+   past it must identify EOF rather than rejecting a record that did fit. */
+void test_full_final_trace_line_without_newline_is_run(void) {
+    char text[256];
+    const char *prefix = "R 0x0 #";
+    size_t prefix_len = strlen(prefix);
+    memcpy(text, prefix, prefix_len);
+    memset(text + prefix_len, 'x', sizeof(text) - prefix_len - 1);
+    text[sizeof(text) - 1] = '\0';
+
+    trace_summary_t summary;
+    TEST_ASSERT_EQUAL(0, run_trace_text(text, &summary));
+    TEST_ASSERT_EQUAL(0, summary.truncated);
+    TEST_ASSERT_EQUAL(1, summary.records);
+    TEST_ASSERT_EQUAL(1, summary.accesses);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -407,6 +443,8 @@ int main(void) {
     RUN_TEST(test_set_bigger_than_the_cache_is_refused);
     RUN_TEST(test_record_past_the_top_address_is_malformed);
     RUN_TEST(test_record_ending_at_the_top_address_terminates);
+    RUN_TEST(test_overlong_trace_line_is_not_run);
+    RUN_TEST(test_full_final_trace_line_without_newline_is_run);
 
     return UNITY_END();
 }

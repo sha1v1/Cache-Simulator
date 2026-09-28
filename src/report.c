@@ -78,8 +78,11 @@ void report_trace_summary(const simulator_t *sim, const char *name,
                trace->failed, trace->failed == 1 ? "" : "es");
     }
     if(trace->truncated > 0){
-        printf("  over-long   : %lu (line did not fit, remainder discarded)\n",
+        printf("  over-long   : %lu (NOT run - results are incomplete)\n",
                trace->truncated);
+    }
+    if(trace->io_errors > 0){
+        printf("  input errors: %lu (results are incomplete)\n", trace->io_errors);
     }
 }
 
@@ -93,13 +96,18 @@ void report_csv(const simulator_t *sim, const char *name,
     double miss_rate = accesses == 0 ? 0.0 : (double)misses / (double)accesses;
 
     printf("trace,size,block,assoc,policy,seed,records,accesses,hits,misses,"
-           "miss_rate,compulsory,capacity,conflict,evictions,errors,malformed\n");
-    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu\n",
+           "miss_rate,compulsory,capacity,conflict,evictions,errors,malformed,"
+           "failed,truncated,io_errors,complete\n");
+    bool complete = trace->malformed == 0 && trace->failed == 0
+                 && trace->truncated == 0 && trace->io_errors == 0;
+    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,"
+           "%lu,%lu,%lu,%s\n",
            name, config_cache_size(c), c->block_size, c->lines_per_set,
            policy_name(c->replacement_policy), c->seed,
            trace->records, accesses, hits, misses, miss_rate,
            s->compulsory_misses, s->capacity_misses, s->conflict_misses,
-           s->evictions, s->errors, trace->malformed);
+           s->evictions, s->errors, trace->malformed, trace->failed,
+           trace->truncated, trace->io_errors, complete ? "true" : "false");
 }
 
 void report_cache(const cache_t *cache){

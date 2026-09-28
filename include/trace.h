@@ -37,6 +37,7 @@ typedef struct {
     unsigned long truncated;     //lines too long for the buffer
     unsigned long failed;        //accesses the engine refused, e.g. an address
                                  //beyond the simulated memory
+    unsigned long io_errors;     //failures reported by the input stream itself
 } trace_summary_t;
 
 /**
@@ -46,8 +47,8 @@ typedef struct {
  * @param stream the trace to read; not closed here
  * @param name what to call the stream when complaining about a line
  * @param summary filled in with what the run amounted to
- * @return int 0 if the whole trace ran, -1 if any line was unreadable or any
- *         access was refused
+ * @return int 0 if the whole trace ran, -1 if any line was unreadable or too
+ *         long, the input stream failed, or any access was refused
  *
  * Both failures are counted and the first few named, rather than stopping the run
  * or being passed over in silence. Either one means some of the trace did not

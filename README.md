@@ -191,8 +191,8 @@ mistaken for one from a trace that was read whole.
 produced them, so a file of them is self-describing:
 
 ```
-trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,evictions,errors,malformed
-traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0,8,0,0
+trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,evictions,errors,malformed,failed,truncated,io_errors,complete
+traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0,0,0,0,0,0,0,true
 ```
 
 ### A worked result
