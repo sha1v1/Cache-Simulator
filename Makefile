@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wno-error -O2
+CFLAGS = -Wall -Wextra -Wpedantic -O2
 DEPFLAGS = -MMD -MP
 LDLIBS = -lm
 

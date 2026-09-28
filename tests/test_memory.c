@@ -14,14 +14,14 @@ void setUp(void) {
 
 void tearDown(void) { free_memory(&memory); }
 
-void test_initialize_memory() {
+void test_initialize_memory(void) {
     TEST_ASSERT_NOT_NULL(memory.page_table);
     TEST_ASSERT_EQUAL(4, memory.num_pages);
     TEST_ASSERT_EQUAL(256, memory.page_size);
     TEST_ASSERT_EQUAL(1024, memory.total_size);
 }
 
-void test_initialize_memory_rejects_null_inputs() {
+void test_initialize_memory_rejects_null_inputs(void) {
     memory_t uninitialized = {0};
 
     TEST_ASSERT_EQUAL(-1, initialize_memory(NULL, &config));
