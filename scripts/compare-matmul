@@ -1,0 +1,42 @@
+#!/bin/sh
+# Tiling a matrix multiply is two fixes, not one. This runs four traces through one
+# cache configuration to show that:
+#
+#   naive          capacity bound: the inner loop walks B down a column, and by the
+#                  time the next j needs those blocks they have been evicted
+#   tiled, N=64    the capacity misses are gone, but a row stride of N x 8 = 512
+#                  bytes is a whole number of blocks, so every row of a tile lands
+#                  on the same set and they evict each other instead
+#   tiled, N=65    one extra column makes the row stride 520 bytes, which spreads
+#                  the tile across sets. The conflict misses go with it.
+#
+#   scripts/compare-matmul [extra cache_sim flags...]
+#
+# Traces are generated rather than committed: the naive N=64 trace alone is 9 MB.
+set -e
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+GEN="$DIR/build/gen_trace"
+SIM="$DIR/build/cache_sim"
+CFG="--size 4096 --block-size 64 --associativity 4 --memory-size 262144"
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+header=1
+for spec in "naive-N64:matmul-naive 64 8" \
+            "tiled-N64:matmul-tiled 64 8 8" \
+            "naive-N65:matmul-naive 65 8" \
+            "tiled-N65:matmul-tiled 65 8 8"; do
+    label=${spec%%:*}
+    args=${spec#*:}
+    # shellcheck disable=SC2086
+    $GEN $args > "$TMP/$label.trace"
+    if [ "$header" = 1 ]; then
+        # shellcheck disable=SC2086
+        $SIM "$TMP/$label.trace" $CFG "$@" --format csv | head -1
+        header=0
+    fi
+    # shellcheck disable=SC2086
+    $SIM "$TMP/$label.trace" $CFG "$@" --format csv | tail -1 \
+        | sed "s|^[^,]*|$label|"
+done

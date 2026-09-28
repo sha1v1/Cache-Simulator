@@ -17,16 +17,22 @@ SRCS = $(SRCDIR)/main.c $(SRCDIR)/cli.c $(LIBSRCS)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 TARGET    = $(BUILDDIR)/cache_sim
+# Standalone: the generator shares no code with the simulator, because it knows
+# nothing about caches and should not be able to start.
+GENTARGET = $(BUILDDIR)/gen_trace
 UNITYOBJ  = $(BUILDDIR)/unity.o
 TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_memory $(BUILDDIR)/test_sim
 
-all: $(TARGET)
+all: $(TARGET) $(GENTARGET)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 $(TARGET): $(OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
+
+$(GENTARGET): $(SRCDIR)/gen_trace.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -69,6 +75,9 @@ $(SANDIR)/cache_sim: $(SANOBJS) | $(SANDIR)
 $(SANDIR)/test_%: $(TESTDIR)/test_%.c $(SANLIBOBJS) $(SANDIR)/unity.o | $(SANDIR)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SANLIBOBJS) $(SANDIR)/unity.o $(LDLIBS)
 
+$(SANDIR)/gen_trace: $(SRCDIR)/gen_trace.c | $(SANDIR)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(LDLIBS)
+
 # -Wall cannot see a read past the end of a heap allocation, which is most of what
 # this project's hand-written structures - the hash set, the block arena, the trace
 # parser's pointer walk - could get wrong. halt_on_error makes the first finding
@@ -76,7 +85,7 @@ $(SANDIR)/test_%: $(TESTDIR)/test_%.c $(SANLIBOBJS) $(SANDIR)/unity.o | $(SANDIR
 # under ASan on Linux and stays off on macOS, which is why it is not set here.
 SANENV = UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 
-sanitize: $(SANTESTS) $(SANDIR)/cache_sim
+sanitize: $(SANTESTS) $(SANDIR)/cache_sim $(SANDIR)/gen_trace
 	@echo "--- unit tests ---"
 	@for t in $(SANTESTS); do $(SANENV) $$t || exit 1; done
 	@echo "--- trace mode ---"
@@ -88,6 +97,10 @@ sanitize: $(SANTESTS) $(SANDIR)/cache_sim
 	@echo "--- interactive mode ---"
 	@printf 'r 0x0\nr 0x4\nw 0x4 Z\nd\ns\nc\nv\nreset\nr 0x20\nq\n' \
 	    | $(SANENV) $(SANDIR)/cache_sim -i -q --size 256 --memory-size 1024 >/dev/null
+	@echo "--- generator, piped straight into the simulator ---"
+	@$(SANENV) $(SANDIR)/gen_trace matmul-tiled 16 4 \
+	    | $(SANENV) $(SANDIR)/cache_sim - --size 1024 --block-size 32 \
+	      --associativity 4 --memory-size 16384 >/dev/null
 	@echo "sanitizers: clean"
 
 clean:

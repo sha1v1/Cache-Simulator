@@ -247,6 +247,75 @@ Two consequences worth knowing:
   32 KB and 3s at 256 KB. Fine at these sizes; a hash index over the ways is the
   way out if it ever is not.
 
+## Generating workloads
+[src/gen_trace.c](src/gen_trace.c) writes traces to standard output. It is a
+separate program that knows nothing about caches, deliberately: a trace describes
+what a program touches, and if it changed with the cache then every row of a sweep
+would be a different experiment.
+
+```
+./build/gen_trace WORKLOAD [parameters...]
+./build/gen_trace matmul-tiled 64 8 | ./build/cache_sim - --size 4096
+```
+
+| workload | parameters | what it exercises |
+| --- | --- | --- |
+| `sequential` | `BYTES [WORD]` | spatial locality; block size matters, associativity does not |
+| `loop` | `BYTES PASSES [WORD]` | **capacity** misses when the region does not fit |
+| `strided` | `BYTES STRIDE [COUNT] [WORD]` | **conflict** misses when the stride is one set's span |
+| `random` | `BYTES COUNT [SEED] [WORD]` | no locality; the floor everything else beats |
+| `matmul-naive` | `N [ELEMENT]` | textbook loop order over three N×N matrices |
+| `matmul-tiled` | `N TILE [ELEMENT]` | the same arithmetic, blocked |
+
+Each trace opens with a comment naming the parameters it was made from and closes
+with one naming its footprint, so `--memory-size` can be chosen without guessing.
+
+### Each kind of miss, on demand
+The breakdown is only worth having if it can distinguish the cases, so each is
+reproducible. A 4 KB cache with 64-byte blocks throughout:
+
+| command | miss rate | compulsory | capacity | conflict |
+| --- | --- | --- | --- | --- |
+| `sequential 4096` | 6.3% | 64 | 0 | 0 |
+| `loop 4096 4` at 2 KB | 6.3% | 64 | **192** | 0 |
+| `loop 4096 4` at 2 KB, fully associative | 6.3% | 64 | **192** | 0 |
+| `strided 8192 512 64` 4-way | 100% | 16 | 0 | **48** |
+| `strided 8192 512 64` fully associative | 25% | 16 | 0 | **0** |
+
+The pairs are the point. Making the cache fully associative leaves the capacity
+misses untouched — placement freedom cannot manufacture space — while it removes
+the conflict misses entirely, because those were only ever the mapping's fault.
+
+### Tiling is two fixes, not one
+`scripts/compare-matmul` multiplies three N×N matrices of 8-byte doubles, 96 KB of
+data, through a **4 KB 4-way** cache:
+
+| workload | miss rate | compulsory | capacity | conflict |
+| --- | --- | --- | --- | --- |
+| naive, N=64 | 51.7% | 1,536 | **269,696** | 0 |
+| tiled, N=64 | 34.2% | 1,536 | 4,480 | **162,880** |
+| naive, N=65 | 45.7% | 1,585 | 248,787 | 0 |
+| tiled, N=65 | **6.3%** | 1,585 | 13,177 | 22,862 |
+
+Read down the last two columns:
+
+1. **Naive is capacity bound.** 270k capacity misses and not one conflict miss. The
+   inner loop walks `B` down a column, and by the time the next `j` wants those
+   blocks they have been evicted. No amount of associativity would help.
+2. **Tiling fixes that — and exposes something else.** Capacity misses fall 60×, to
+   4,480. But the miss rate only improves from 51.7% to 34.2%, because 163k
+   *conflict* misses appear in their place. With N=64 a row is 512 bytes, exactly
+   eight blocks, so every row of a tile lands on the same set and the tile evicts
+   itself.
+3. **One extra column collects the rest.** At N=65 a row is 520 bytes, which
+   spreads a tile across sets. 6.3%.
+
+51.7% to 6.3% took two separate changes addressing two different causes, and the
+miss rate alone identifies neither. Sweeping associativity on the tiled N=64 trace
+makes the second point sharper still — it gets *worse* from 1-way to 8-way, because
+reducing the set count at fixed capacity aligns the tile rows ever more tightly,
+before collapsing to 1.7% at 16-way once a tile finally fits in one set.
+
 ## Configuration
 Every setting is a command line flag, listed under [Options](#options) above.
 The rules each one has to satisfy:
@@ -327,6 +396,7 @@ main.c  cli.c  commands.c   front end: arguments, what to do, reading input
 | [src/cli.c](src/cli.c) | front end | what the command line arguments mean |
 | [src/commands.c](src/commands.c) | front end | the command language and the menu loop |
 | [src/trace.c](src/trace.c) | front end | reading a trace file and running it |
+| [src/gen_trace.c](src/gen_trace.c) | standalone | emits workload traces; links nothing else |
 | [src/report.c](src/report.c) | presentation | every line of text the program prints |
 | [src/log.c](src/log.c) | presentation | output level, for the layers that print |
 | [src/sim.c](src/sim.c) | engine | read/write through the cache, and the statistics |
