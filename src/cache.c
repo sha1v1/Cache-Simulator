@@ -16,7 +16,7 @@ static int initialize_sets(set_t *sets, int num_sets, int lines_per_set, uint8_t
     }
 
     for (int i = 0; i < num_sets; i++) {
-        sets[i].cache_lines = (line_t *)malloc(lines_per_set * sizeof(line_t));
+        sets[i].cache_lines = malloc((size_t)lines_per_set * sizeof(*sets[i].cache_lines));
         if (!sets[i].cache_lines) {
             return -1;
         }
@@ -46,7 +46,7 @@ cache_t *initialize_cache(const config_t *config) {
     }
 
     // Zeroed pointers make the normal destructor safe on partial failure.
-    cache_t *cache = (cache_t *)calloc(1, sizeof(cache_t));
+    cache_t *cache = calloc(1, sizeof(*cache));
     if (!cache) {
         return NULL;
     }
@@ -54,15 +54,15 @@ cache_t *initialize_cache(const config_t *config) {
     cache->lines_per_set = config->lines_per_set;
     cache->layout = layout;
 
-    cache->cache_sets = (set_t *)malloc((size_t)cache->num_sets * sizeof(set_t));
+    cache->cache_sets = malloc((size_t)cache->num_sets * sizeof(*cache->cache_sets));
     if (!cache->cache_sets) {
         free_cache(cache);
         return NULL;
     }
 
     // All block storage is contiguous and released with one free.
-    cache->block_arena = (uint8_t *)calloc((size_t)cache->num_sets * cache->lines_per_set,
-                                           (size_t)layout.block_size);
+    cache->block_arena =
+        calloc((size_t)cache->num_sets * cache->lines_per_set, (size_t)layout.block_size);
     if (!cache->block_arena) {
         free_cache(cache);
         return NULL;
@@ -128,10 +128,10 @@ int check_cache(cache_t *cache, unsigned int addr, uint8_t *out_data, int *out_w
     unsigned int tag_bits = get_tag_bits(&cache->layout, addr);
     int block_offset = get_block_offset(&cache->layout, addr);
 
-    set_t *cur_set = &(cache->cache_sets[set_index]);
+    set_t *set = &cache->cache_sets[set_index];
 
-    for (int i = 0; i < cur_set->lines_per_set; i++) {
-        line_t *line = &cur_set->cache_lines[i];
+    for (int i = 0; i < set->lines_per_set; i++) {
+        line_t *line = &set->cache_lines[i];
 
         if (line->valid_bit && line->tag == tag_bits) {
             if (out_data) {
@@ -152,22 +152,22 @@ line_t *handle_line_replacement(cache_t *cache, unsigned int addr, replacement_p
 
     int set_index = get_set_index(&cache->layout, addr);
 
-    set_t *cur_set = &(cache->cache_sets[set_index]);
+    set_t *set = &cache->cache_sets[set_index];
 
-    for (int i = 0; i < cur_set->lines_per_set; i++) {
-        if (!(cur_set->cache_lines[i].valid_bit)) {
-            return &(cur_set->cache_lines[i]);
+    for (int i = 0; i < set->lines_per_set; i++) {
+        if (!set->cache_lines[i].valid_bit) {
+            return &set->cache_lines[i];
         }
     }
 
     // No default: compiler warnings flag an unhandled policy.
     switch (policy) {
     case POLICY_LRU:
-        return least_recently_used(cur_set);
+        return least_recently_used(set);
     case POLICY_RANDOM:
-        return random_replacement(cur_set);
+        return random_replacement(set);
     case POLICY_FIFO:
-        return first_in_first_out(cur_set);
+        return first_in_first_out(set);
     }
 
     return NULL;
@@ -195,8 +195,8 @@ static line_t *first_in_first_out(set_t *set) {
 }
 
 static line_t *random_replacement(set_t *set) {
-    int line_to_replace_index = rand() % set->lines_per_set;
-    return &set->cache_lines[line_to_replace_index];
+    int victim = rand() % set->lines_per_set;
+    return &set->cache_lines[victim];
 }
 
 void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits, const uint8_t *block_data,
@@ -213,12 +213,13 @@ void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits, const uin
 }
 
 void free_cache(cache_t *cache) {
-    if (!cache)
+    if (!cache) {
         return;
+    }
 
     if (cache->cache_sets) {
         for (int i = 0; i < cache->num_sets; i++) {
-            set_t *set = &(cache->cache_sets[i]);
+            set_t *set = &cache->cache_sets[i];
             if (set->cache_lines) {
                 free(set->cache_lines);
                 set->cache_lines = NULL;

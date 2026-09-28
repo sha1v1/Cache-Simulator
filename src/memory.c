@@ -1,6 +1,8 @@
 #include "../include/memory.h"
 #include <stdlib.h>
 
+enum { PAGE_SIZE = 256, PRINTABLE_MIN = 32, PRINTABLE_MAX = 126 };
+
 int initialize_memory(memory_t *memory, const config_t *config) {
     // A partial final block could not be fetched safely.
     if (!memory || !config || config->block_size <= 0 || config->main_memory_size <= 0 ||
@@ -10,12 +12,12 @@ int initialize_memory(memory_t *memory, const config_t *config) {
 
     memory->total_size = config->main_memory_size;
     memory->block_size = config->block_size;
-    memory->page_size = 256; // fixed page size
+    memory->page_size = PAGE_SIZE;
     // This overflow-safe expression rounds up to a whole page.
     memory->num_pages =
         memory->total_size / memory->page_size + (memory->total_size % memory->page_size != 0);
 
-    memory->page_table = (uint8_t **)calloc(memory->num_pages, sizeof(uint8_t *));
+    memory->page_table = calloc((size_t)memory->num_pages, sizeof(*memory->page_table));
     if (!memory->page_table) {
         return -1;
     }
@@ -33,7 +35,7 @@ int allocate_page(memory_t *memory, int page_index) {
     }
 
     if (memory->page_table[page_index] == NULL) {
-        memory->page_table[page_index] = (uint8_t *)malloc(memory->page_size * sizeof(uint8_t));
+        memory->page_table[page_index] = malloc((size_t)memory->page_size);
         if (!memory->page_table[page_index]) {
             return -3;
         }
@@ -41,7 +43,7 @@ int allocate_page(memory_t *memory, int page_index) {
         // Printable data keeps interactive cache dumps readable.
         for (int i = 0; i < memory->page_size; i++) {
             memory->page_table[page_index][i] =
-                32 + (rand() % (126 - 32 + 1)); // ASCII range [32, 126]
+                PRINTABLE_MIN + (rand() % (PRINTABLE_MAX - PRINTABLE_MIN + 1));
         }
     }
     return 1;
@@ -52,12 +54,12 @@ int read_from_memory(memory_t *memory, int address) {
         return -1;
     }
 
-    int page_idx = address / memory->page_size;
-    int offset = address % memory->page_size;
-
     if (address >= memory->total_size || address < 0) {
         return -1;
     }
+
+    int page_idx = address / memory->page_size;
+    int offset = address % memory->page_size;
 
     if (allocate_page(memory, page_idx) != 1) {
         return -1;
@@ -71,12 +73,12 @@ int write_to_memory(memory_t *memory, int address, uint8_t value) {
         return 0;
     }
 
-    int page_idx = address / memory->page_size;
-    int offset = address % memory->page_size;
-
     if (address >= memory->total_size || address < 0) {
         return 0;
     }
+    int page_idx = address / memory->page_size;
+    int offset = address % memory->page_size;
+
     // Initialize the whole page so neighboring bytes always have defined values.
     if (allocate_page(memory, page_idx) != 1) {
         return 0;
@@ -152,9 +154,7 @@ void free_memory(memory_t *memory) {
     }
 
     for (int i = 0; i < memory->num_pages; i++) {
-        if (memory->page_table[i] != NULL) {
-            free(memory->page_table[i]);
-        }
+        free(memory->page_table[i]);
     }
     free(memory->page_table);
     memory->page_table = NULL;
