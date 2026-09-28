@@ -1,51 +1,45 @@
-#include "../include/memory.h"
 #include "../include/config.h"
-#include "../src/unity/unity.h"
 #include "../include/memory.h"
+#include "../src/unity/unity.h"
 #include <limits.h>
 
 memory_t memory;
 config_t config;
 
-void setUp(void){
+void setUp(void) {
     config.main_memory_size = 1024;
     config.block_size = DEFAULT_BLOCK_SIZE;
     initialize_memory(&memory, &config);
 }
 
-void tearDown(void){
-    free_memory(&memory);
-}
+void tearDown(void) { free_memory(&memory); }
 
-void test_initialize_memory(){
+void test_initialize_memory() {
     TEST_ASSERT_NOT_NULL(memory.page_table);
     TEST_ASSERT_EQUAL(4, memory.num_pages);
     TEST_ASSERT_EQUAL(256, memory.page_size);
     TEST_ASSERT_EQUAL(1024, memory.total_size);
-
-
 }
 
-void test_read_from_memory(void){
+void test_read_from_memory(void) {
     int value = read_from_memory(&memory, 500);
     TEST_ASSERT(value >= 32 && value <= 126);
 }
 
-void test_write_to_memory(void){
+void test_write_to_memory(void) {
     write_to_memory(&memory, 500, 42);
     int value = read_from_memory(&memory, 500);
     TEST_ASSERT_EQUAL(42, value);
-
 }
 
-void test_write_block_to_memory(void){
+void test_write_block_to_memory(void) {
     uint8_t block[DEFAULT_BLOCK_SIZE];
-    for(int i = 0; i < DEFAULT_BLOCK_SIZE; i++){
+    for (int i = 0; i < DEFAULT_BLOCK_SIZE; i++) {
         block[i] = (uint8_t)i;
     }
 
     TEST_ASSERT_EQUAL(1, write_block_to_memory(&memory, 0x100, block));
-    for(int i = 0; i < DEFAULT_BLOCK_SIZE; i++){
+    for (int i = 0; i < DEFAULT_BLOCK_SIZE; i++) {
         TEST_ASSERT_EQUAL(i, read_from_memory(&memory, 0x100 + i));
     }
     TEST_ASSERT_EQUAL(0, write_block_to_memory(&memory, 0x101, block));
@@ -53,32 +47,22 @@ void test_write_block_to_memory(void){
     TEST_ASSERT_EQUAL(0, write_block_to_memory(&memory, 0, NULL));
 }
 
-//Writing one byte has to bring the whole page into existence populated, the
-//same as a read does. Otherwise the other 255 bytes on that page hold whatever
-//malloc returned, and nothing in the program ever decided their values.
-void test_write_then_read_untouched_neighbour(void){
-    write_to_memory(&memory, 500, 42);            //first touch of page 1
-    int value = read_from_memory(&memory, 501);   //a byte nobody ever wrote
+// A first write must also initialize untouched bytes on the page.
+void test_write_then_read_untouched_neighbour(void) {
+    write_to_memory(&memory, 500, 42);          // first touch of page 1
+    int value = read_from_memory(&memory, 501); // a byte nobody ever wrote
     TEST_ASSERT(value >= 32 && value <= 126);
 }
 
 void test_out_of_bounds_access(void) {
-    int read_value = read_from_memory(&memory, 2000);  // Out of bounds
-    TEST_ASSERT_EQUAL(-1, read_value);               // Should return -1
+    int read_value = read_from_memory(&memory, 2000); // Out of bounds
+    TEST_ASSERT_EQUAL(-1, read_value);                // Should return -1
 
     int write_success = write_to_memory(&memory, 2000, 42);
-    TEST_ASSERT_EQUAL(0, write_success);             // Should fail
+    TEST_ASSERT_EQUAL(0, write_success); // Should fail
 }
-//check for
-// 1. failed to initialize memory
-// 2. trying to allocated invalid page index (out of bounds)
-// 3. read from memory with out of bounds address/ uninitialized memory
-// 4. write to memory to an out of bounds address or uninitialized memory
-
-void test_uninitialized_memory(void){
-    //this is zero initialialization. This ensures page_table = NULL
-    //and other fields are zero.
-    //leaving "invalid_memory" in an uninitialized state might cause page_table to point to garbalge values.
+void test_uninitialized_memory(void) {
+    // Zero initialization guarantees a safe null page table.
     memory_t invalid_memory = {0};
     int val = read_from_memory(&invalid_memory, 101);
     TEST_ASSERT_EQUAL(-1, val);
@@ -86,18 +70,18 @@ void test_uninitialized_memory(void){
     TEST_ASSERT_EQUAL(write_to_memory(&invalid_memory, 100, 10), 0);
 }
 
-void test_allocate_invalid_page_index(void){
+void test_allocate_invalid_page_index(void) {
     int ret = allocate_page(&memory, 7);
     TEST_ASSERT_EQUAL(-2, ret);
 }
 
-void test_allocate_page_invalid_memory(void){
+void test_allocate_page_invalid_memory(void) {
     memory_t invalid_memory = {0};
     int ret = allocate_page(&invalid_memory, 1);
     TEST_ASSERT_EQUAL(-1, ret);
 }
 
-void test_read_from_memory_uninitialized(void){
+void test_read_from_memory_uninitialized(void) {
     memory_t invalid_memory = {0};
     int ret1 = read_from_memory(NULL, 2);
     int ret2 = read_from_memory(&invalid_memory, 2);
@@ -105,21 +89,21 @@ void test_read_from_memory_uninitialized(void){
     TEST_ASSERT_EQUAL(-1, ret2);
 }
 
-void test_read_from_memory_invalid_address(void){
+void test_read_from_memory_invalid_address(void) {
     int ret1 = read_from_memory(&memory, 1024);
     int ret2 = read_from_memory(&memory, -2);
     TEST_ASSERT_EQUAL(-1, ret1);
     TEST_ASSERT_EQUAL(-1, ret2);
 }
 
-void test_write_to_memory_invalid_address(void){
+void test_write_to_memory_invalid_address(void) {
     int ret1 = write_to_memory(&memory, -1, 'a');
     int ret2 = write_to_memory(&memory, 2000, 'a');
     TEST_ASSERT_EQUAL(0, ret1);
     TEST_ASSERT_EQUAL(0, ret2);
 }
 
-void test_write_to_memory_uninitialized(void){
+void test_write_to_memory_uninitialized(void) {
     memory_t invalid_memory = {0};
     int ret1 = write_to_memory(NULL, 2, 'a');
     int ret2 = write_to_memory(&invalid_memory, 2, 'a');
@@ -127,9 +111,10 @@ void test_write_to_memory_uninitialized(void){
     TEST_ASSERT_EQUAL(0, ret2);
 }
 
-//fetch_block_from_memory must refuse an unusable memory_t rather than dereferencing
-//it, and must not report success while filling the block with error codes.
-void test_fetch_block_uninitialized_memory(void){
+// fetch_block_from_memory must refuse an unusable memory_t rather than
+// dereferencing it, and must not report success while filling the block with
+// error codes.
+void test_fetch_block_uninitialized_memory(void) {
     memory_t invalid_memory = {0};
     uint8_t *block = NULL;
 
@@ -139,10 +124,10 @@ void test_fetch_block_uninitialized_memory(void){
     TEST_ASSERT_NULL(block);
 }
 
-/* The page count rounds up. Done as (total + page - 1) / page it overflowed at the
-   largest size --memory-size accepts; the answer is still a whole page per 256
-   bytes, plus one for the 255 left over. */
-void test_largest_memory_size_counts_its_pages(void){
+/* The page count rounds up. Done as (total + page - 1) / page it overflowed at
+   the largest size --memory-size accepts; the answer is still a whole page per
+   256 bytes, plus one for the 255 left over. */
+void test_largest_memory_size_counts_its_pages(void) {
     free_memory(&memory);
     config.main_memory_size = INT_MAX;
     config.block_size = 1;
