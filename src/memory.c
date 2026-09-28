@@ -30,7 +30,10 @@ int initialize_memory(memory_t *memory, config_t *config){
     //kept here so a fetch need not be told the size on every call
     memory->block_size = config->block_size;
     memory->page_size = 256; //fixed page size
-    memory->num_pages = (memory->total_size + memory->page_size - 1)/memory->page_size; //round up
+    //round up. Not (total + page - 1) / page: total may be INT_MAX, and the sum
+    //would overflow
+    memory->num_pages = memory->total_size / memory->page_size
+                      + (memory->total_size % memory->page_size != 0);
 
     //allocate memory for array of page pointers
     memory->page_table = (uint8_t **)calloc(memory->num_pages, sizeof(uint8_t *));

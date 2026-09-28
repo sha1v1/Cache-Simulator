@@ -1,4 +1,5 @@
 #include "../include/sim.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,6 +12,7 @@ const char *sim_status_message(sim_status_t status){
         case SIM_ERR_LINES_PER_SET:   return "lines per set must be positive";
         case SIM_ERR_MEMORY_SIZE:     return "main memory size must be a positive multiple of the block size";
         case SIM_ERR_BLOCK_SIZE:      return "block size must be a positive power of two";
+        case SIM_ERR_CACHE_SIZE:      return "cache is too large: sets x lines x block size must fit in an int";
         case SIM_ERR_OUT_OF_MEMORY:   return "out of memory";
         case SIM_ERR_ADDRESS_RANGE:   return "address is outside main memory";
         case SIM_ERR_NOT_INITIALIZED: return "simulator is not initialized";
@@ -57,6 +59,11 @@ static sim_status_t validate_config(const config_t *config){
     //mask that isolates it - the same rule, and the same reason, as num_sets
     if(config->block_size <= 0 || (config->block_size & (config->block_size - 1)) != 0){
         return SIM_ERR_BLOCK_SIZE;
+    }
+    //the cache's size in bytes, and its count of blocks, are both computed as ints
+    //later. Checked by division, since the multiplication is what would overflow.
+    if(config->lines_per_set > INT_MAX / config->num_sets / config->block_size){
+        return SIM_ERR_CACHE_SIZE;
     }
     //fetch_block_from_memory aligns down to a block boundary and always reads
     //block_size bytes, so a memory that doesn't end on one would have its last

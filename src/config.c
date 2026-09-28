@@ -16,7 +16,13 @@ int config_derive_sets(config_t *config, int cache_size){
         return -1;
     }
 
-    //bytes one set holds: one block per way
+    //a set bigger than the whole cache cannot fit even once. Tested by division,
+    //because block_size * lines_per_set is exactly the product that can overflow
+    if(config->lines_per_set > cache_size / config->block_size){
+        return -1;
+    }
+
+    //bytes one set holds: one block per way. At most cache_size, after the above
     int bytes_per_set = config->block_size * config->lines_per_set;
 
     //a size that is not a whole number of sets would leave a partial set, which

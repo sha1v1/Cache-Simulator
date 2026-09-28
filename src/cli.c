@@ -265,21 +265,29 @@ int build_config(const options_t *opts, config_t *config){
 
     if(config_derive_sets(config, opts->cache_size) != 0){
         //naming the nearest usable sizes saves the arithmetic: a set holds one
-        //block per way, so the total has to be a whole number of those
-        int bytes_per_set = opts->block_size * opts->associativity;
-        int below = (opts->cache_size / bytes_per_set) * bytes_per_set;
+        //block per way, so the total has to be a whole number of those. In long
+        //long: both factors are accepted ints, and their product need not be one
+        long long bytes_per_set = (long long)opts->block_size * opts->associativity;
+        long long below = (opts->cache_size / bytes_per_set) * bytes_per_set;
 
         log_error("Error: --size %d is not a whole number of sets. With %d-byte "
-                  "blocks and %d ways a set holds %d bytes",
+                  "blocks and %d ways a set holds %lld bytes",
                   opts->cache_size, opts->block_size, opts->associativity,
                   bytes_per_set);
         //below is zero for a size under one set, where there is nothing lower to
-        //suggest and offering it twice would read as a mistake
-        if(below > 0){
-            log_error(", so try %d or %d.\n", below, below + bytes_per_set);
+        //suggest and offering it twice would read as a mistake. A suggestion past
+        //INT_MAX would be one --size refuses, so it is not offered.
+        if(below > 0 && below + bytes_per_set <= INT_MAX){
+            log_error(", so try %lld or %lld.\n", below, below + bytes_per_set);
+        }
+        else if(below > 0){
+            log_error(", so try %lld.\n", below);
+        }
+        else if(bytes_per_set <= INT_MAX){
+            log_error("; the smallest usable size is %lld.\n", bytes_per_set);
         }
         else{
-            log_error("; the smallest usable size is %d.\n", bytes_per_set);
+            log_error(", more than any --size can hold.\n");
         }
         return -1;
     }

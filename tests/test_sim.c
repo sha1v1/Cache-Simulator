@@ -180,7 +180,8 @@ void test_page_allocation_is_reported(void) {
 void test_every_status_has_a_message(void) {
     /* a caller wording an error must never be handed an empty string */
     sim_status_t all[] = {SIM_OK, SIM_ERR_NUM_SETS, SIM_ERR_LINES_PER_SET,
-                       SIM_ERR_MEMORY_SIZE, SIM_ERR_OUT_OF_MEMORY,
+                       SIM_ERR_MEMORY_SIZE, SIM_ERR_BLOCK_SIZE, SIM_ERR_CACHE_SIZE,
+                       SIM_ERR_OUT_OF_MEMORY,
                        SIM_ERR_ADDRESS_RANGE, SIM_ERR_NOT_INITIALIZED};
 
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
@@ -221,6 +222,13 @@ void test_bad_configuration_is_rejected(void) {
     config_t no_block = base;
     no_block.block_size = 0;
     TEST_ASSERT_EQUAL(SIM_ERR_BLOCK_SIZE, sim_init(&bad, &no_block));
+
+    /* each field is valid alone, but the size in bytes, 2^40, is not an int */
+    config_t too_large = base;
+    too_large.num_sets = 1 << 20;
+    too_large.lines_per_set = 1 << 10;
+    too_large.block_size = 1 << 10;
+    TEST_ASSERT_EQUAL(SIM_ERR_CACHE_SIZE, sim_init(&bad, &too_large));
 
     /* a memory smaller than a single block leaves the first fetch running off the
        end, and is caught as an unaligned size rather than slipping through */
@@ -326,6 +334,20 @@ void test_reset_forgets_the_miss_history(void) {
     TEST_ASSERT_EQUAL(0, sim.stats.conflict_misses);
 }
 
+/* A set of 2^30-byte blocks times 4 ways is 2^32 bytes: the product overflowed,
+   wrapped to 0, and the size check then divided by it. It is a set bigger than the
+   cache, and must be refused as one. */
+void test_set_bigger_than_the_cache_is_refused(void) {
+    config_t config = {.lines_per_set = 4, .block_size = 1 << 30};
+    TEST_ASSERT_EQUAL(-1, config_derive_sets(&config, 1024));
+
+    /* one byte short of a set is refused too, not only the overflowing case */
+    config_t almost = {.lines_per_set = 2, .block_size = 32};
+    TEST_ASSERT_EQUAL(-1, config_derive_sets(&almost, 63));
+    TEST_ASSERT_EQUAL(0, config_derive_sets(&almost, 64));
+    TEST_ASSERT_EQUAL(1, almost.num_sets);
+}
+
 /* Runs a trace held in a string, the way the trace front end runs a file. */
 static int run_trace_text(const char *text, trace_summary_t *summary){
     FILE *stream = fmemopen((void *)text, strlen(text), "r");
@@ -382,6 +404,7 @@ int main(void) {
     RUN_TEST(test_fully_associative_cache_has_no_conflict_misses);
     RUN_TEST(test_compulsory_count_does_not_depend_on_the_geometry);
     RUN_TEST(test_reset_forgets_the_miss_history);
+    RUN_TEST(test_set_bigger_than_the_cache_is_refused);
     RUN_TEST(test_record_past_the_top_address_is_malformed);
     RUN_TEST(test_record_ending_at_the_top_address_terminates);
 

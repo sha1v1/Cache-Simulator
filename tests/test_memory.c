@@ -2,6 +2,7 @@
 #include "../include/config.h"
 #include "../src/unity/unity.h"
 #include "../include/memory.h"
+#include <limits.h>
 #include <stdio.h>
 
 memory_t memory;
@@ -124,6 +125,17 @@ void test_fetch_block_uninitialized_memory(void){
     TEST_ASSERT_NULL(block);
 }
 
+/* The page count rounds up. Done as (total + page - 1) / page it overflowed at the
+   largest size --memory-size accepts; the answer is still a whole page per 256
+   bytes, plus one for the 255 left over. */
+void test_largest_memory_size_counts_its_pages(void){
+    free_memory(&memory);
+    config.main_memory_size = INT_MAX;
+    config.block_size = 1;
+    TEST_ASSERT_EQUAL(0, initialize_memory(&memory, &config));
+    TEST_ASSERT_EQUAL(INT_MAX / 256 + 1, memory.num_pages);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -140,5 +152,6 @@ int main(void) {
     RUN_TEST(test_write_to_memory_invalid_address);
     RUN_TEST(test_write_to_memory_uninitialized);
     RUN_TEST(test_fetch_block_uninitialized_memory);
+    RUN_TEST(test_largest_memory_size_counts_its_pages);
     return UNITY_END();
 }
