@@ -2,6 +2,7 @@
 #include "../include/commands.h"
 #include "../include/log.h"
 #include "../include/sim.h"
+#include "../include/trace.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -325,6 +326,44 @@ void test_reset_forgets_the_miss_history(void) {
     TEST_ASSERT_EQUAL(0, sim.stats.conflict_misses);
 }
 
+/* Runs a trace held in a string, the way the trace front end runs a file. */
+static int run_trace_text(const char *text, trace_summary_t *summary){
+    FILE *stream = fmemopen((void *)text, strlen(text), "r");
+    TEST_ASSERT_NOT_NULL(stream);
+    int status = run_trace(&sim, stream, "test", summary);
+    fclose(stream);
+    return status;
+}
+
+/* A record whose last byte is past 0xFFFFFFFF used to wrap to address 0, come out
+   as zero accesses, and let the run report success. It names no real access. */
+void test_record_past_the_top_address_is_malformed(void) {
+    trace_summary_t summary;
+
+    TEST_ASSERT_EQUAL(-1, run_trace_text("R 0xFFFFFFFF 2\n", &summary));
+    TEST_ASSERT_EQUAL(1, summary.malformed);
+    TEST_ASSERT_EQUAL(0, summary.records);
+    TEST_ASSERT_EQUAL(0, summary.accesses);
+}
+
+/* With 1-byte blocks the top address is block UINT_MAX, where a block <= last
+   loop can never end. The record is legal; it must be exactly its two accesses,
+   both refused because they are beyond the simulated memory. */
+void test_record_ending_at_the_top_address_terminates(void) {
+    sim_free(&sim);
+    config_t config = {.num_sets = 4, .main_memory_size = 1024,
+                       .lines_per_set = 1, .block_size = 1,
+                       .replacement_policy = POLICY_LRU};
+    TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+    trace_summary_t summary;
+    TEST_ASSERT_EQUAL(-1, run_trace_text("R 0xFFFFFFFE 2\n", &summary));
+    TEST_ASSERT_EQUAL(0, summary.malformed);
+    TEST_ASSERT_EQUAL(1, summary.records);
+    TEST_ASSERT_EQUAL(2, summary.accesses);
+    TEST_ASSERT_EQUAL(2, summary.failed);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -343,6 +382,8 @@ int main(void) {
     RUN_TEST(test_fully_associative_cache_has_no_conflict_misses);
     RUN_TEST(test_compulsory_count_does_not_depend_on_the_geometry);
     RUN_TEST(test_reset_forgets_the_miss_history);
+    RUN_TEST(test_record_past_the_top_address_is_malformed);
+    RUN_TEST(test_record_ending_at_the_top_address_terminates);
 
     return UNITY_END();
 }

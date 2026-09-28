@@ -88,6 +88,11 @@ static int parse_trace_line(const char *line, trace_record_t *out){
         if(*p != '\0' && *p != '#'){
             return -1;
         }
+        //the last byte must still be an address: past 0xFFFFFFFF the arithmetic
+        //would wrap to 0 and describe an access no program could make
+        if((unsigned long)bytes - 1 > UINT_MAX - addr){
+            return -1;
+        }
         size = (int)bytes;
     }
 
@@ -109,10 +114,15 @@ static void run_record(simulator_t *sim, const trace_record_t *rec,
                        trace_summary_t *summary, unsigned long *complaints){
     int block_size = sim->cache->layout.block_size;
     unsigned int first_block = rec->addr / (unsigned int)block_size;
+    //cannot wrap: the parser refuses a record whose last byte is past UINT_MAX
     unsigned int last_block = (rec->addr + (unsigned int)rec->size - 1)
                               / (unsigned int)block_size;
 
-    for(unsigned int block = first_block; block <= last_block; block++){
+    //counted rather than block <= last_block, which is always true when
+    //last_block is UINT_MAX (1-byte blocks at the top address) and never ends
+    unsigned int block_count = last_block - first_block + 1;
+    for(unsigned int i = 0; i < block_count; i++){
+        unsigned int block = first_block + i;
         //the first byte this record touches inside this block
         unsigned int at = (block == first_block)
                         ? rec->addr
