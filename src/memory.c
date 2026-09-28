@@ -147,6 +147,39 @@ int write_to_memory(memory_t *memory, int address, uint8_t value){
     return 1;
 }
 
+/** Writes one aligned cache block back to main memory. */
+int write_block_to_memory(memory_t *memory, unsigned int block_address,
+                          const uint8_t *block_data){
+    if(!memory || !memory->page_table || !block_data || memory->block_size <= 0){
+        return 0;
+    }
+    if(block_address % (unsigned int)memory->block_size != 0
+       || block_address >= (unsigned int)memory->total_size
+       || (unsigned int)memory->block_size
+          > (unsigned int)memory->total_size - block_address){
+        return 0;
+    }
+
+    //Allocate every page first so an allocation failure cannot leave half of a
+    //dirty block written and half still only in the cache.
+    unsigned int last = block_address + (unsigned int)memory->block_size - 1u;
+    int first_page = (int)block_address / memory->page_size;
+    int last_page = (int)last / memory->page_size;
+    for(int page = first_page; page <= last_page; page++){
+        if(allocate_page(memory, page) != 1){
+            return 0;
+        }
+    }
+
+    for(int i = 0; i < memory->block_size; i++){
+        unsigned int address = block_address + (unsigned int)i;
+        int page = (int)address / memory->page_size;
+        int offset = (int)address % memory->page_size;
+        memory->page_table[page][offset] = block_data[i];
+    }
+    return 1;
+}
+
 //since I am calling malloc inside, the caller will have to free the memory.
 /**
  * @brief fetches a block of data (cache line) from memory.
@@ -229,4 +262,3 @@ void free_memory(memory_t *memory){
     free(memory->page_table);  //free the page table
     memory->page_table = NULL;
 }
-

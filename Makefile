@@ -102,7 +102,8 @@ sanitize: $(SANTESTS) $(SANDIR)/cache_sim $(SANDIR)/gen_trace
 	    $(SANDIR)/cache_sim - --size 1024 --memory-size 1024 >/dev/null 2>&1 || true
 	@echo "--- interactive mode ---"
 	@printf 'r 0x0\nr 0x4\nw 0x4 Z\nd\ns\nc\nv\nreset\nr 0x20\nq\n' \
-	    | $(SANENV) $(SANDIR)/cache_sim -i -q --size 256 --memory-size 1024 >/dev/null
+	    | $(SANENV) $(SANDIR)/cache_sim -i -q --size 256 --memory-size 1024 \
+	      --write-policy back --write-allocate >/dev/null
 	@echo "--- generator, piped straight into the simulator ---"
 	@$(SANENV) $(SANDIR)/gen_trace matmul-tiled 16 4 \
 	    | $(SANENV) $(SANDIR)/cache_sim - --size 1024 --block-size 32 \

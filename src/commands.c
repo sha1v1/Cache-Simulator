@@ -114,6 +114,7 @@ void print_command_help(void){
     printf("  s                   show statistics\n");
     printf("  c                   show the configuration\n");
     printf("  v                   toggle verbose narration of the internals\n");
+    printf("  flush               write every dirty line to memory\n");
     printf("  reset               empty the cache and clear the statistics\n");
     printf("  h                   show this help\n");
     printf("  q                   quit\n");
@@ -267,6 +268,19 @@ command_status_t run_command_line(simulator_t *sim, char *line, bool interactive
             return CMD_FAILED;
         }
         log_info("Cache emptied and statistics cleared.\n");
+        return CMD_OK;
+    }
+
+    if(strcasecmp(cmd, "flush") == 0){
+        unsigned long before = sim->stats.writebacks;
+        sim_status_t status = sim_flush(sim);
+        if(status != SIM_OK){
+            log_error("Error: %s; flush may be incomplete\n",
+                      sim_status_message(status));
+            return CMD_FAILED;
+        }
+        unsigned long count = sim->stats.writebacks - before;
+        log_info("Flushed %lu dirty line%s.\n", count, count == 1 ? "" : "s");
         return CMD_OK;
     }
 

@@ -39,6 +39,7 @@ int address_layout_init(address_layout_t *layout, int block_size, int num_sets);
 
 typedef struct {
     bool valid_bit;
+    bool dirty;        //changed since it was fetched; meaningful when valid
     unsigned int tag;
     uint8_t *block;    //block_size raw bytes, not a string - no terminator.
                        //Points into the single arena the cache allocates, so no
@@ -77,6 +78,8 @@ int initialize_sets(set_t* sets, int num_sets, int lines_per_set,
 int get_set_index(const address_layout_t *layout, unsigned int addr);
 int get_block_offset(const address_layout_t *layout, unsigned int addr);
 unsigned int get_tag_bits(const address_layout_t *layout, unsigned int addr);
+unsigned int get_block_address(const address_layout_t *layout, int set_index,
+                               unsigned int tag);
 
 //out_way receives the way within the set that matched, on a hit; may be NULL.
 int check_cache(cache_t *cache, unsigned int addr, uint8_t* out_data, int *out_way);

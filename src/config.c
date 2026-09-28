@@ -6,6 +6,8 @@ void set_config_defaults(config_t *config){
     config->lines_per_set = DEFAULT_ASSOCIATIVITY;
     config->block_size = DEFAULT_BLOCK_SIZE;
     config->replacement_policy = POLICY_LRU;
+    config->write_policy = WRITE_THROUGH;
+    config->write_allocate = false;
     config->seed = DEFAULT_SEED;
     //last, because it is derived from the two fields above
     config_derive_sets(config, DEFAULT_CACHE_SIZE);
@@ -61,6 +63,28 @@ int parse_policy(const char *name, replacement_policy_t *out){
     }
     if(strcasecmp(name, "FIFO") == 0){
         *out = POLICY_FIFO;
+        return 0;
+    }
+    return -1;
+}
+
+const char *write_policy_name(write_policy_t policy){
+    switch(policy){
+        case WRITE_THROUGH: return "write-through";
+        case WRITE_BACK:    return "write-back";
+    }
+    return "unknown";
+}
+
+int parse_write_policy(const char *name, write_policy_t *out){
+    if(strcasecmp(name, "through") == 0 || strcasecmp(name, "write-through") == 0
+       || strcasecmp(name, "WT") == 0){
+        *out = WRITE_THROUGH;
+        return 0;
+    }
+    if(strcasecmp(name, "back") == 0 || strcasecmp(name, "write-back") == 0
+       || strcasecmp(name, "WB") == 0){
+        *out = WRITE_BACK;
         return 0;
     }
     return -1;

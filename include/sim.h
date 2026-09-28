@@ -28,6 +28,7 @@ typedef enum {
     SIM_ERR_MEMORY_SIZE,       //main_memory_size is not a positive multiple of block_size
     SIM_ERR_BLOCK_SIZE,        //block_size is not a positive power of two
     SIM_ERR_CACHE_SIZE,        //num_sets * lines_per_set * block_size exceeds INT_MAX
+    SIM_ERR_WRITE_POLICY,      //write_policy is not a known enum value
     SIM_ERR_OUT_OF_MEMORY,     //an allocation failed
     SIM_ERR_ADDRESS_RANGE,     //the address lies outside main memory
     SIM_ERR_NOT_INITIALIZED    //the simulator was never successfully built
@@ -55,9 +56,11 @@ typedef struct {
     unsigned long write_hits;
     unsigned long write_misses;
     unsigned long evictions;        //misses that had to displace a valid line
-    //Why the read misses missed. These three sum to read_misses, not to all
-    //misses: under no-write-allocate a write miss fills nothing, so there is no
-    //placement decision to attribute it to.
+    unsigned long writebacks;       //dirty cache blocks copied to memory
+    unsigned long memory_writes;    //byte writes and block writebacks
+    unsigned long memory_write_bytes;
+    //Why read misses missed. These sum to read_misses; write misses are reported
+    //separately even when write-allocate installs their blocks.
     unsigned long compulsory_misses;
     unsigned long capacity_misses;
     unsigned long conflict_misses;
@@ -92,6 +95,8 @@ typedef struct {
     int  set_index;       //set the address mapped to, -1 on error
     int  line_index;      //line filled or updated, -1 if no line was touched
     bool evicted;         //true if the line used held valid data beforehand
+    bool wrote_back;      //true if that eviction copied a dirty block to memory
+    bool memory_accessed; //true if memory supplied or accepted data
     bool page_allocated;  //true if this access is what brought the page into existence
 } access_info_t;
 
@@ -111,6 +116,9 @@ void sim_free(simulator_t *sim);
 //The simulator is left untouched if the cache could not be rebuilt.
 sim_status_t sim_reset(simulator_t *sim);
 
+//Copies every dirty line to memory without emptying the cache.
+sim_status_t sim_flush(simulator_t *sim);
+
 /**
  * @brief Reads one byte through the cache, filling a line on a miss.
  *
@@ -122,7 +130,7 @@ sim_status_t sim_reset(simulator_t *sim);
 sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info);
 
 /**
- * @brief Writes one byte, write-through with no-write-allocate.
+ * @brief Writes one byte using the configured write and allocation policies.
  *
  * @param sim the simulator to write through
  * @param addr the address to write

@@ -73,6 +73,97 @@ void test_write_through_no_write_allocate(void) {
     TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x40, &cached, NULL));
     TEST_ASSERT_EQUAL('B', cached);
     TEST_ASSERT_EQUAL('B', read_from_memory(&sim.memory, 0x40));
+    TEST_ASSERT_EQUAL(2, sim.stats.memory_writes);
+    TEST_ASSERT_EQUAL(2, sim.stats.memory_write_bytes);
+}
+
+void test_write_back_allocate_defers_memory_until_eviction(void) {
+    sim_free(&sim);
+    config_t config = {.num_sets = 1, .main_memory_size = 1024,
+                       .lines_per_set = 1, .block_size = DEFAULT_BLOCK_SIZE,
+                       .replacement_policy = POLICY_LRU,
+                       .write_policy = WRITE_BACK, .write_allocate = true};
+    TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+    int old_value = read_from_memory(&sim.memory, 0x00);
+    access_info_t info;
+    TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x00, 'Z', &info));
+    TEST_ASSERT_EQUAL(ACCESS_MISS, info.result);
+    TEST_ASSERT_EQUAL(0, sim.stats.memory_writes);
+    TEST_ASSERT_EQUAL(old_value, read_from_memory(&sim.memory, 0x00));
+
+    line_t *line = &sim.cache->cache_sets[0].cache_lines[0];
+    TEST_ASSERT_TRUE(line->dirty);
+    TEST_ASSERT_EQUAL('Z', line->block[0]);
+
+    //One-way and one-set: this different block must evict the dirty one.
+    TEST_ASSERT_EQUAL(SIM_OK, sim_read(&sim, 0x20, &info));
+    TEST_ASSERT_TRUE(info.evicted);
+    TEST_ASSERT_TRUE(info.wrote_back);
+    TEST_ASSERT_EQUAL('Z', read_from_memory(&sim.memory, 0x00));
+    TEST_ASSERT_EQUAL(1, sim.stats.writebacks);
+    TEST_ASSERT_EQUAL(1, sim.stats.memory_writes);
+    TEST_ASSERT_EQUAL(DEFAULT_BLOCK_SIZE, sim.stats.memory_write_bytes);
+}
+
+void test_write_back_reset_flushes_dirty_lines(void) {
+    sim_free(&sim);
+    config_t config = {.num_sets = 1, .main_memory_size = 1024,
+                       .lines_per_set = 1, .block_size = DEFAULT_BLOCK_SIZE,
+                       .replacement_policy = POLICY_LRU,
+                       .write_policy = WRITE_BACK, .write_allocate = true};
+    TEST_ASSERT_EQUAL(SIM_OK, sim_init(&sim, &config));
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x00, 'Q', NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_flush(&sim));
+    TEST_ASSERT_EQUAL('Q', read_from_memory(&sim.memory, 0x00));
+    TEST_ASSERT_EQUAL(1, sim.stats.writebacks);
+    TEST_ASSERT_FALSE(sim.cache->cache_sets[0].cache_lines[0].dirty);
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x00, 'R', NULL));
+    TEST_ASSERT_EQUAL(SIM_OK, sim_reset(&sim));
+    TEST_ASSERT_EQUAL('R', read_from_memory(&sim.memory, 0x00));
+    TEST_ASSERT_EQUAL(0, sim.stats.writebacks); //reset clears the previous run
+    TEST_ASSERT_EQUAL(0, check_cache(sim.cache, 0x00, NULL, NULL));
+}
+
+void test_write_through_allocate_fills_on_miss(void) {
+    sim.config.write_allocate = true;
+    access_info_t info;
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x40, 'A', &info));
+    TEST_ASSERT_EQUAL(ACCESS_MISS, info.result);
+    TEST_ASSERT_TRUE(info.memory_accessed);
+    TEST_ASSERT_TRUE(info.line_index >= 0);
+    TEST_ASSERT_EQUAL('A', read_from_memory(&sim.memory, 0x40));
+
+    uint8_t cached = 0;
+    int way = -1;
+    TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x40, &cached, &way));
+    TEST_ASSERT_EQUAL('A', cached);
+    TEST_ASSERT_FALSE(sim.cache->cache_sets[info.set_index].cache_lines[way].dirty);
+}
+
+void test_write_back_no_allocate_bypasses_on_miss(void) {
+    sim.config.write_policy = WRITE_BACK;
+    access_info_t info;
+
+    TEST_ASSERT_EQUAL(SIM_OK, sim_write(&sim, 0x40, 'N', &info));
+    TEST_ASSERT_EQUAL(ACCESS_MISS, info.result);
+    TEST_ASSERT_EQUAL(-1, info.line_index);
+    TEST_ASSERT_EQUAL(0, check_cache(sim.cache, 0x40, NULL, NULL));
+    TEST_ASSERT_EQUAL('N', read_from_memory(&sim.memory, 0x40));
+    TEST_ASSERT_EQUAL(1, sim.stats.memory_writes);
+    TEST_ASSERT_EQUAL(0, sim.stats.writebacks);
+}
+
+void test_write_policy_parser(void) {
+    write_policy_t policy;
+    TEST_ASSERT_EQUAL(0, parse_write_policy("back", &policy));
+    TEST_ASSERT_EQUAL(WRITE_BACK, policy);
+    TEST_ASSERT_EQUAL(0, parse_write_policy("write-through", &policy));
+    TEST_ASSERT_EQUAL(WRITE_THROUGH, policy);
+    TEST_ASSERT_EQUAL(-1, parse_write_policy("sometimes", &policy));
 }
 
 void test_eviction_is_counted_once_the_set_is_full(void) {
@@ -157,6 +248,8 @@ void test_command_lines_drive_the_simulator(void) {
     TEST_ASSERT_EQUAL(1, check_cache(sim.cache, 0x100, &cached, NULL));
     TEST_ASSERT_EQUAL(0x41, cached);
 
+    TEST_ASSERT_EQUAL(CMD_OK, run_line("flush"));
+
     TEST_ASSERT_EQUAL(CMD_QUIT, run_line("q"));
 }
 
@@ -203,6 +296,7 @@ void test_every_status_has_a_message(void) {
     /* a caller wording an error must never be handed an empty string */
     sim_status_t all[] = {SIM_OK, SIM_ERR_NUM_SETS, SIM_ERR_LINES_PER_SET,
                        SIM_ERR_MEMORY_SIZE, SIM_ERR_BLOCK_SIZE, SIM_ERR_CACHE_SIZE,
+                       SIM_ERR_WRITE_POLICY,
                        SIM_ERR_OUT_OF_MEMORY,
                        SIM_ERR_ADDRESS_RANGE, SIM_ERR_NOT_INITIALIZED};
 
@@ -258,6 +352,10 @@ void test_bad_configuration_is_rejected(void) {
     memory_below_one_block.block_size = 64;
     memory_below_one_block.main_memory_size = 32;
     TEST_ASSERT_EQUAL(SIM_ERR_MEMORY_SIZE, sim_init(&bad, &memory_below_one_block));
+
+    config_t bad_write_policy = base;
+    bad_write_policy.write_policy = (write_policy_t)99;
+    TEST_ASSERT_EQUAL(SIM_ERR_WRITE_POLICY, sim_init(&bad, &bad_write_policy));
 }
 
 /* 0x000, 0x080 and 0x100 all map to set 0 in a 4-set cache, which has 2 ways. The
@@ -449,6 +547,11 @@ int main(void) {
 
     RUN_TEST(test_read_miss_then_hit);
     RUN_TEST(test_write_through_no_write_allocate);
+    RUN_TEST(test_write_back_allocate_defers_memory_until_eviction);
+    RUN_TEST(test_write_back_reset_flushes_dirty_lines);
+    RUN_TEST(test_write_through_allocate_fills_on_miss);
+    RUN_TEST(test_write_back_no_allocate_bypasses_on_miss);
+    RUN_TEST(test_write_policy_parser);
     RUN_TEST(test_eviction_is_counted_once_the_set_is_full);
     RUN_TEST(test_FIFO_ignores_hits_when_choosing_a_victim);
     RUN_TEST(test_failed_access_counts_only_as_an_error);

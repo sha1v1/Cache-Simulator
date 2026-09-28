@@ -57,6 +57,9 @@ than guessing which front end was meant.
 | `--block-size N` | bytes per block; a power of two (default: 32) |
 | `--associativity N` | lines per set (default: 2) |
 | `--policy LRU\|RANDOM\|FIFO` | replacement policy (default: LRU) |
+| `--write-policy through\|back` | when cached writes reach memory (default: through) |
+| `--write-allocate` | fetch and cache a block after a write miss |
+| `--no-write-allocate` | bypass the cache after a write miss (default) |
 | `--memory-size N` | bytes of main memory (default: 1024) |
 | `--seed N` | seed for RANDOM replacement (default: 1) |
 | `-v`, `--verbose` | narrate the internals as well |
@@ -130,6 +133,7 @@ block competing for those two ways, so something has to go.
 | `s` | show statistics |
 | `c` | show the configuration |
 | `v` | toggle verbose narration of the internals |
+| `flush` | copy every dirty cache line to main memory |
 | `reset` | empty the cache and clear the statistics |
 | `h` | show the command list |
 | `q` | quit |
@@ -148,7 +152,11 @@ starts without it.
 `hits` and `misses` account for exactly the accesses that completed: an access
 that failed, such as one to an address outside main memory, is counted in
 `errors` alone. `evictions` counts only the misses that displaced a valid line,
-so a cold miss into an empty line is not one.
+so a cold miss into an empty line is not one. `writebacks` counts dirty blocks
+copied to memory; `memory writes` reports both the number of memory write
+transactions and the bytes they transferred. Dirty lines still resident at the
+end of a trace are not writebacks yet; an interactive `flush` makes that traffic
+explicit when it is part of the experiment.
 
 ## Trace mode
 Interactive mode shows how one access works. Trace mode runs a whole workload and
@@ -191,8 +199,8 @@ mistaken for one from a trace that was read whole.
 produced them, so a file of them is self-describing:
 
 ```
-trace,size,block,assoc,policy,seed,records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,evictions,errors,malformed,failed,truncated,io_errors,complete
-traces/conflict.trace,1024,32,8,LRU,1,32,32,24,8,0.250000,8,0,0,0,0,0,0,0,0,true
+trace,size,block,assoc,policy,write_policy,write_allocate,seed,records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,evictions,writebacks,memory_writes,memory_write_bytes,errors,malformed,failed,truncated,io_errors,complete
+traces/conflict.trace,1024,32,8,LRU,write-through,false,1,32,32,24,8,0.250000,8,0,0,0,0,0,0,0,0,0,0,0,true
 ```
 
 ### A worked result
@@ -239,9 +247,9 @@ than with the cache.
 
 Two consequences worth knowing:
 
-- The three account for the **read** misses. A write miss under no-write-allocate
-  fills nothing, so it has no placement decision to attribute; write misses are
-  reported separately.
+- The three account for the **read** misses. Write misses are reported separately,
+  while writes still update the reference cache according to the configured
+  allocation policy so later reads see the right history.
 - The breakdown is exact when the real cache also uses `LRU`. With `RANDOM` or
   `FIFO`, the fully associative reference remains LRU, so a replacement-policy
   miss can appear in the `conflict` column. The overall hits, misses and evictions
@@ -339,6 +347,11 @@ The rules each one has to satisfy:
 - `--policy`: `LRU` replaces the least recently used line, `RANDOM` one chosen at
   random, and `FIFO` the line that has been resident in its set the longest. A hit
   refreshes LRU order but never FIFO insertion order.
+- `--write-policy`: `through` updates cache and memory together; `back` marks a
+  changed cache line dirty and copies its full block to memory only on eviction,
+  `flush`, or `reset`.
+- `--write-allocate` / `--no-write-allocate`: whether a write miss fetches and
+  installs the block or writes directly to memory without filling the cache.
 - `--seed`: Seeds the generator `RANDOM` draws from, so two runs of the same
   command agree. It is reported with the configuration, which is what makes a
   published number reproducible.
@@ -353,8 +366,16 @@ overrides it:
 ./configs/l1-32k-8way --interactive --associativity 1   # same 32 KB, direct mapped
 ```
 
-Writes are write-through with no-write-allocate: a write always reaches main
-memory, and updates the cache only when the address is already resident.
+The default remains write-through with no-write-allocate. To model the common
+write-back/write-allocate pairing:
+
+```
+./build/cache_sim TRACE --write-policy back --write-allocate
+```
+
+The choices are independent of associativity and replacement policy, so the same
+write behavior works with direct-mapped, set-associative, and fully associative
+caches using LRU, RANDOM, or FIFO.
 
 Main memory is not initialized from a file. A page is filled with random
 printable bytes the first time it is touched, so two runs of the same commands
@@ -364,17 +385,13 @@ see different data.
 `d` dumps every line:
 ```
 *****CACHE STATE*****
-Set | Way  | Valid | Tag     | Block Data
------------------------------------------
-  0 |    0 |     1 |       2 | ZE~@\9pwz[W (,R$wu}Ku=p-sHq;.[/E
-  0 |    1 |     1 |       4 | m/m4]n'u:V:U+i:Tp#E#`Gf{2'z2` 0\
-  1 |    0 |     0 |       0 | ................................
-  1 |    1 |     0 |       0 | ................................
-  2 |    0 |     0 |       0 | ................................
-  2 |    1 |     0 |       0 | ................................
-  3 |    0 |     0 |       0 | ................................
-  3 |    1 |     0 |       0 | ................................
------------------------------------------
+Set | Way  | Valid | Dirty | Tag     | Block Data
+-------------------------------------------------
+  0 |    0 |     1 |     1 |       2 | ZE~@\9pwz[W (,R$wu}Ku=p-sHq;.[/E
+  0 |    1 |     1 |     0 |       4 | m/m4]n'u:V:U+i:Tp#E#`Gf{2'z2` 0\
+  1 |    0 |     0 |     0 |       0 | ................................
+  1 |    1 |     0 |     0 |       0 | ................................
+-------------------------------------------------
 ```
 A block holds arbitrary bytes and has no terminator, so unprintable bytes are
 shown as `.` the way `hexdump` does.

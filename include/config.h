@@ -25,6 +25,13 @@ typedef enum {
     POLICY_FIFO      //evict the line that entered the set first
 } replacement_policy_t;
 
+//When a cached byte is changed, whether main memory is updated immediately or
+//only when the dirty line leaves the cache.
+typedef enum {
+    WRITE_THROUGH,
+    WRITE_BACK
+} write_policy_t;
+
 /**
  * The settings one simulated machine is built from.
  *
@@ -44,6 +51,8 @@ typedef struct {
     //parsing instead of on every eviction, and there is no fixed-size buffer for
     //an over-long value to overflow
     replacement_policy_t replacement_policy;
+    write_policy_t write_policy;
+    bool write_allocate;       //bring a block into cache after a write miss
     //recorded here rather than used here: the engine draws from the global rand(),
     //which main() seeds. It travels with the configuration so that a reported run
     //carries the one value needed to reproduce a RANDOM policy exactly.
@@ -79,5 +88,8 @@ const char *policy_name(replacement_policy_t policy);
 //Parses "LRU"/"RANDOM"/"FIFO" (case-insensitively) into out. Returns 0, or -1
 //if the name is not one of them.
 int parse_policy(const char *name, replacement_policy_t *out);
+
+const char *write_policy_name(write_policy_t policy);
+int parse_write_policy(const char *name, write_policy_t *out);
 
 #endif

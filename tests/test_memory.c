@@ -39,6 +39,21 @@ void test_write_to_memory(void){
 
 }
 
+void test_write_block_to_memory(void){
+    uint8_t block[DEFAULT_BLOCK_SIZE];
+    for(int i = 0; i < DEFAULT_BLOCK_SIZE; i++){
+        block[i] = (uint8_t)i;
+    }
+
+    TEST_ASSERT_EQUAL(1, write_block_to_memory(&memory, 0x100, block));
+    for(int i = 0; i < DEFAULT_BLOCK_SIZE; i++){
+        TEST_ASSERT_EQUAL(i, read_from_memory(&memory, 0x100 + i));
+    }
+    TEST_ASSERT_EQUAL(0, write_block_to_memory(&memory, 0x101, block));
+    TEST_ASSERT_EQUAL(0, write_block_to_memory(&memory, 0x400, block));
+    TEST_ASSERT_EQUAL(0, write_block_to_memory(&memory, 0, NULL));
+}
+
 //Writing one byte has to bring the whole page into existence populated, the
 //same as a read does. Otherwise the other 255 bytes on that page hold whatever
 //malloc returned, and nothing in the program ever decided their values.
@@ -142,6 +157,7 @@ int main(void) {
     RUN_TEST(test_initialize_memory);
     RUN_TEST(test_read_from_memory);
     RUN_TEST(test_write_to_memory);
+    RUN_TEST(test_write_block_to_memory);
     RUN_TEST(test_write_then_read_untouched_neighbour);
     RUN_TEST(test_out_of_bounds_access);
     RUN_TEST(test_uninitialized_memory);

@@ -16,7 +16,8 @@ void report_config(const simulator_t *sim){
         printf("  miss breakdown    : LRU reference; policy misses may appear as conflict\n");
     }
     printf("  seed              : %u\n", c->seed);
-    printf("  write policy      : write-through, no-write-allocate\n");
+    printf("  write policy      : %s, %s\n", write_policy_name(c->write_policy),
+           c->write_allocate ? "write-allocate" : "no-write-allocate");
 }
 
 /**
@@ -37,14 +38,13 @@ void report_stats(const stats_t *s){
     printf("  accesses    : %lu (%lu reads, %lu writes)\n", accesses, s->reads, s->writes);
     printf("  hits        : %lu (%.2f%%)\n", hits, hit_rate(hits, accesses));
     printf("  misses      : %lu (%.2f%%)\n", misses, hit_rate(misses, accesses));
-    //The three account for the read misses, which are the ones that filled a line.
-    //A write miss under no-write-allocate fills nothing, so it has no placement to
-    //attribute; saying which total they add up to keeps that from looking wrong.
+    //The classifier reports read misses only. Writes still update its history
+    //according to their allocation policy, but are kept separate in this summary.
     printf("    compulsory: %lu\n", s->compulsory_misses);
     printf("    capacity  : %lu\n", s->capacity_misses);
     printf("    conflict  : %lu\n", s->conflict_misses);
     if(s->write_misses > 0){
-        printf("    (of %lu read misses; %lu write misses filled nothing)\n",
+        printf("    (of %lu read misses; %lu write misses reported separately)\n",
                s->read_misses, s->write_misses);
     }
     printf("  read hits   : %lu / %lu (%.2f%%)\n",
@@ -52,6 +52,9 @@ void report_stats(const stats_t *s){
     printf("  write hits  : %lu / %lu (%.2f%%)\n",
            s->write_hits, s->writes, hit_rate(s->write_hits, s->writes));
     printf("  evictions   : %lu\n", s->evictions);
+    printf("  writebacks  : %lu\n", s->writebacks);
+    printf("  memory writes: %lu (%lu bytes)\n",
+           s->memory_writes, s->memory_write_bytes);
     printf("  pages used  : %lu\n", s->pages_allocated);
     printf("  errors      : %lu\n", s->errors);
 }
@@ -98,18 +101,21 @@ void report_csv(const simulator_t *sim, const char *name,
     unsigned long misses = s->read_misses + s->write_misses;
     double miss_rate = accesses == 0 ? 0.0 : (double)misses / (double)accesses;
 
-    printf("trace,size,block,assoc,policy,seed,records,accesses,hits,misses,"
-           "miss_rate,compulsory,capacity,conflict,evictions,errors,malformed,"
+    printf("trace,size,block,assoc,policy,write_policy,write_allocate,seed,"
+           "records,accesses,hits,misses,miss_rate,compulsory,capacity,conflict,"
+           "evictions,writebacks,memory_writes,memory_write_bytes,errors,malformed,"
            "failed,truncated,io_errors,complete\n");
     bool complete = trace->malformed == 0 && trace->failed == 0
                  && trace->truncated == 0 && trace->io_errors == 0;
-    printf("%s,%d,%d,%d,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,"
-           "%lu,%lu,%lu,%s\n",
+    printf("%s,%d,%d,%d,%s,%s,%s,%u,%lu,%lu,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,"
+           "%lu,%lu,%lu,%lu,%lu,%lu,%lu,%s\n",
            name, config_cache_size(c), c->block_size, c->lines_per_set,
-           policy_name(c->replacement_policy), c->seed,
+           policy_name(c->replacement_policy), write_policy_name(c->write_policy),
+           c->write_allocate ? "true" : "false", c->seed,
            trace->records, accesses, hits, misses, miss_rate,
            s->compulsory_misses, s->capacity_misses, s->conflict_misses,
-           s->evictions, s->errors, trace->malformed, trace->failed,
+           s->evictions, s->writebacks, s->memory_writes, s->memory_write_bytes,
+           s->errors, trace->malformed, trace->failed,
            trace->truncated, trace->io_errors, complete ? "true" : "false");
 }
 
@@ -120,14 +126,15 @@ void report_cache(const cache_t *cache){
     }
 
     printf("\n\n*****CACHE STATE*****\n");
-    printf("Set | Way  | Valid | Tag     | Block Data\n");
-    printf("-----------------------------------------\n");
+    printf("Set | Way  | Valid | Dirty | Tag     | Block Data\n");
+    printf("-------------------------------------------------\n");
 
     for(int i = 0; i < cache->num_sets; i++){
         const set_t *set = &cache->cache_sets[i];
         for(int j = 0; j < cache->lines_per_set; j++){
             const line_t *line = &set->cache_lines[j];
-            printf("%3d | %4d | %5d | %7u | ", i, j, line->valid_bit, line->tag);
+            printf("%3d | %4d | %5d | %5d | %7u | ", i, j, line->valid_bit,
+                   line->dirty, line->tag);
 
             //the block holds arbitrary bytes and has no terminator, so %s would
             //read past it. Print printable ASCII as-is and stand in a '.' for the
@@ -140,7 +147,7 @@ void report_cache(const cache_t *cache){
             putchar('\n');
         }
     }
-    printf("-----------------------------------------\n");
+    printf("-------------------------------------------------\n");
 }
 
 /**
@@ -209,20 +216,29 @@ void report_access(const simulator_t *sim, char op, unsigned int addr,
         }
     }
     else{
-        //write-through means memory is updated either way; say so, and say when
-        //the cache was deliberately left alone
         if(info->result == ACCESS_HIT){
-            log_info("  -> cache way %d + memory", info->line_index);
+            log_info("  -> cache way %d%s", info->line_index,
+                     sim->config.write_policy == WRITE_BACK
+                     ? " (marked dirty)" : " + memory");
+        }
+        else if(info->line_index >= 0){
+            log_info("  -> filled cache way %d%s", info->line_index,
+                     sim->config.write_policy == WRITE_BACK
+                     ? " (marked dirty)" : " + memory");
         }
         else{
             log_info("  -> memory only (no-write-allocate)");
         }
+    }
+    if(info->wrote_back){
+        log_info("; wrote back dirty victim");
     }
     log_info("\n");
 }
 
 void report_access_detail(const simulator_t *sim, char op, unsigned int addr,
                         const access_info_t *info){
+    (void)op;
     if(info->result == ACCESS_ERROR){
         return;
     }
@@ -231,12 +247,7 @@ void report_access_detail(const simulator_t *sim, char op, unsigned int addr,
     //is left to add is the memory side of the access: whether main memory was
     //consulted at all, and what it gave up when it was.
 
-    //a read hit is answered by the cache alone, so naming a page there would
-    //suggest main memory was consulted when the whole point is that it was not.
-    //A write always reaches memory, hit or miss, because writes are write-through.
-    bool touched_memory = (op == 'W') || (info->result == ACCESS_MISS);
-
-    if(!touched_memory){
+    if(!info->memory_accessed && !info->wrote_back){
         log_verbose("  main memory not consulted\n");
         return;
     }
@@ -244,15 +255,21 @@ void report_access_detail(const simulator_t *sim, char op, unsigned int addr,
     //derived here rather than carried in access_info_t: the address and the memory
     //geometry are both to hand, so the engine need not report what can be
     //recomputed
-    log_verbose("  memory page %d%s\n",
-               (int)addr / sim->memory.page_size,
-               info->page_allocated ? " (allocated by this access)" : "");
+    if(info->memory_accessed){
+        log_verbose("  memory page %d%s\n",
+                   (int)addr / sim->memory.page_size,
+                   info->page_allocated ? " (allocated by this access)" : "");
+    }
 
     //the reason the next few nearby addresses will hit: a miss does not fetch the
     //byte that was asked for, it fetches the whole block that byte sits in
-    if(op == 'R' && info->result == ACCESS_MISS){
+    if(info->line_index >= 0 && info->result == ACCESS_MISS){
         log_verbose("  fetched all %d bytes of the block, not just the byte asked for\n",
                    sim->cache->layout.block_size);
+    }
+    if(info->wrote_back){
+        log_verbose("  copied the dirty victim's full %d-byte block to memory\n",
+                    sim->cache->layout.block_size);
     }
 }
 

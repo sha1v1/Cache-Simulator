@@ -13,6 +13,7 @@ const char *sim_status_message(sim_status_t status){
         case SIM_ERR_MEMORY_SIZE:     return "main memory size must be a positive multiple of the block size";
         case SIM_ERR_BLOCK_SIZE:      return "block size must be a positive power of two";
         case SIM_ERR_CACHE_SIZE:      return "cache is too large: sets x lines x block size must fit in an int";
+        case SIM_ERR_WRITE_POLICY:    return "write policy must be write-through or write-back";
         case SIM_ERR_OUT_OF_MEMORY:   return "out of memory";
         case SIM_ERR_ADDRESS_RANGE:   return "address is outside main memory";
         case SIM_ERR_NOT_INITIALIZED: return "simulator is not initialized";
@@ -35,6 +36,8 @@ static void clear_info(access_info_t *info){
     info->set_index = -1;
     info->line_index = -1;
     info->evicted = false;
+    info->wrote_back = false;
+    info->memory_accessed = false;
     info->page_allocated = false;
 }
 
@@ -59,6 +62,9 @@ static sim_status_t validate_config(const config_t *config){
     //mask that isolates it - the same rule, and the same reason, as num_sets
     if(config->block_size <= 0 || (config->block_size & (config->block_size - 1)) != 0){
         return SIM_ERR_BLOCK_SIZE;
+    }
+    if(config->write_policy != WRITE_THROUGH && config->write_policy != WRITE_BACK){
+        return SIM_ERR_WRITE_POLICY;
     }
     //the cache's size in bytes, and its count of blocks, are both computed as ints
     //later. Checked by division, since the multiplication is what would overflow.
@@ -122,17 +128,122 @@ void sim_free(simulator_t *sim){
     free_memory(&sim->memory);
 }
 
+/** Copies a dirty line to the memory address encoded by its set and tag. */
+static sim_status_t write_back_line(simulator_t *sim, int set_index, line_t *line,
+                                    bool *wrote_back){
+    if(wrote_back){
+        *wrote_back = false;
+    }
+    if(!line->valid_bit || !line->dirty){
+        return SIM_OK;
+    }
+
+    unsigned int address = get_block_address(&sim->cache->layout, set_index,
+                                              line->tag);
+    if(write_block_to_memory(&sim->memory, address, line->block) != 1){
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
+    line->dirty = false;
+    sim->stats.writebacks++;
+    sim->stats.memory_writes++;
+    sim->stats.memory_write_bytes += (unsigned long)sim->cache->layout.block_size;
+    if(wrote_back){
+        *wrote_back = true;
+    }
+    return SIM_OK;
+}
+
+sim_status_t sim_flush(simulator_t *sim){
+    if(!sim || !sim->cache || !sim->memory.page_table){
+        return SIM_ERR_NOT_INITIALIZED;
+    }
+    for(int set_index = 0; set_index < sim->cache->num_sets; set_index++){
+        set_t *set = &sim->cache->cache_sets[set_index];
+        for(int way = 0; way < set->lines_per_set; way++){
+            sim_status_t status = write_back_line(sim, set_index,
+                                                  &set->cache_lines[way], NULL);
+            if(status != SIM_OK){
+                sim->stats.errors++;
+                return status;
+            }
+        }
+    }
+    return SIM_OK;
+}
+
 sim_status_t sim_reset(simulator_t *sim){
     cache_t *fresh = initialize_cache(&sim->config);
     if(!fresh){
         //the old cache is still intact, so the simulator stays usable
         return SIM_ERR_OUT_OF_MEMORY;
     }
+    //A reset discards all lines. Preserve the only current copies of dirty data
+    //before freeing the old cache; the fresh cache is discarded if that fails.
+    sim_status_t status = sim_flush(sim);
+    if(status != SIM_OK){
+        free_cache(fresh);
+        return status;
+    }
     free_cache(sim->cache);
     sim->cache = fresh;
     //the breakdown describes a history, so it has to forget one too
     classifier_reset(&sim->classifier);
     memset(&sim->stats, 0, sizeof(sim->stats));
+    return SIM_OK;
+}
+
+/**
+ * Fetches a block and installs it, writing a dirty victim back first.
+ */
+static sim_status_t fill_cache_line(simulator_t *sim, unsigned int addr,
+                                    line_t **out_line, int *out_way,
+                                    bool *out_evicted, bool *out_wrote_back,
+                                    int *out_value){
+    uint8_t *block_data = NULL;
+    if(fetch_block_from_memory(&sim->memory, addr, &block_data) != 0 || !block_data){
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
+
+    int set_index = get_set_index(&sim->cache->layout, addr);
+    line_t *line = handle_line_replacement(sim->cache, addr,
+                                           sim->config.replacement_policy);
+    if(!line){
+        free(block_data);
+        return SIM_ERR_NOT_INITIALIZED;
+    }
+
+    bool evicted = line->valid_bit;
+    bool wrote_back = false;
+    sim_status_t status = write_back_line(sim, set_index, line, &wrote_back);
+    if(status != SIM_OK){
+        free(block_data);
+        return status;
+    }
+
+    set_t *set = &sim->cache->cache_sets[set_index];
+    int way = (int)(line - set->cache_lines);
+    int value = block_data[get_block_offset(&sim->cache->layout, addr)];
+    update_cache(sim->cache, line, get_tag_bits(&sim->cache->layout, addr),
+                 block_data, sim->cache->layout.block_size);
+    free(block_data);
+
+    *out_line = line;
+    *out_way = way;
+    *out_evicted = evicted;
+    *out_wrote_back = wrote_back;
+    if(out_value){
+        *out_value = value;
+    }
+    return SIM_OK;
+}
+
+static sim_status_t write_memory_byte(simulator_t *sim, unsigned int addr,
+                                      uint8_t value){
+    if(write_to_memory(&sim->memory, (int)addr, value) != 1){
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
+    sim->stats.memory_writes++;
+    sim->stats.memory_write_bytes++;
     return SIM_OK;
 }
 
@@ -206,33 +317,17 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     //following the mechanism cannot see this happen from the outside
     bool new_page = (sim->memory.page_table[page_index] == NULL);
 
-    //Miss: pull the whole block in from memory, choose a line for it, and fill it.
-    uint8_t *block_data = NULL;
-    if(fetch_block_from_memory(&sim->memory, addr, &block_data) != 0 || !block_data){
+    line_t *line = NULL;
+    int line_index = -1;
+    int fetched_byte = -1;
+    bool evicted = false;
+    bool wrote_back = false;
+    status = fill_cache_line(sim, addr, &line, &line_index, &evicted,
+                             &wrote_back, &fetched_byte);
+    if(status != SIM_OK){
         sim->stats.errors++;
-        return SIM_ERR_OUT_OF_MEMORY;   //the address is already known to be in range
+        return status;
     }
-
-    line_t *line = handle_line_replacement(sim->cache, addr, sim->config.replacement_policy);
-    if(!line){
-        free(block_data);
-        sim->stats.errors++;
-        return SIM_ERR_NOT_INITIALIZED;
-    }
-
-    //read before update_cache overwrites it: a line that already held valid data
-    //is being displaced, which is the eviction worth counting. A fill into an
-    //empty line is a cold miss and costs nobody their data.
-    bool evicted = line->valid_bit;
-
-    set_t *set = &sim->cache->cache_sets[set_index];
-    int line_index = (int)(line - set->cache_lines);
-
-    update_cache(sim->cache, line, get_tag_bits(&sim->cache->layout, addr),
-                 block_data, sim->cache->layout.block_size);
-
-    int fetched_byte = block_data[get_block_offset(&sim->cache->layout, addr)];
-    free(block_data);
 
     sim->stats.reads++;
     sim->stats.read_misses++;
@@ -256,6 +351,8 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
         info->set_index = set_index;
         info->line_index = line_index;
         info->evicted = evicted;
+        info->wrote_back = wrote_back;
+        info->memory_accessed = true;
         info->page_allocated = new_page;
     }
     return SIM_OK;
@@ -274,38 +371,60 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
     int hit_way = -1;
     int hit = check_cache(sim->cache, addr, NULL, &hit_way);   //already resident?
 
-    //a write refreshes a block it finds but brings none in, which is what
-    //no-write-allocate does, so the reference stays a fair comparison. Its verdict
-    //is not used: a write miss fills nothing, so there is no placement decision to
-    //attribute to capacity or to conflict.
+    //The reference follows the configured allocation rule. Its verdict is not
+    //counted because the displayed 3C breakdown deliberately covers reads only,
+    //but allocating writes must still shape the history later reads compare with.
     miss_kind_t unused_kind;
     if(classifier_access(&sim->classifier,
                          addr / (unsigned int)sim->cache->layout.block_size,
-                         false, &unused_kind) != 0){
+                         sim->config.write_allocate, &unused_kind) != 0){
         sim->stats.errors++;
         return SIM_ERR_OUT_OF_MEMORY;
     }
     bool new_page = (sim->memory.page_table[page_index] == NULL);
-
-    //write-through: every write reaches main memory. Memory goes first so a
-    //rejected address cannot leave a cache line holding a byte that main memory
-    //never accepted.
-    if(write_to_memory(&sim->memory, addr, value) != 1){
-        sim->stats.errors++;
-        return SIM_ERR_OUT_OF_MEMORY;   //the address is already known to be in range
-    }
-
     int set_index = get_set_index(&sim->cache->layout, addr);
     int line_index = -1;
+    bool evicted = false;
+    bool wrote_back = false;
+    bool memory_accessed = false;
+    line_t *line = NULL;
 
-    //no-write-allocate: the cache is touched only when the address is already
-    //resident. A miss does not pull the block in.
     if(hit == 1){
-        //check_cache located the line and said which way held it, so the byte goes
-        //straight there instead of searching the set for the same tag a second time
-        line_t *line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
-        line->block[get_block_offset(&sim->cache->layout, addr)] = value;
+        line = &sim->cache->cache_sets[set_index].cache_lines[hit_way];
         line_index = hit_way;
+    }
+    else if(sim->config.write_allocate){
+        status = fill_cache_line(sim, addr, &line, &line_index, &evicted,
+                                 &wrote_back, NULL);
+        if(status != SIM_OK){
+            sim->stats.errors++;
+            return status;
+        }
+        memory_accessed = true; //the entire block was fetched
+    }
+
+    //A no-write-allocate miss always bypasses the cache. Write-through also
+    //updates memory on hits and allocating misses; write-back changes only the
+    //resident line and lets a later eviction or flush copy it out.
+    if(hit != 1 && !sim->config.write_allocate){
+        status = write_memory_byte(sim, addr, value);
+        memory_accessed = true;
+    }
+    else if(sim->config.write_policy == WRITE_THROUGH){
+        status = write_memory_byte(sim, addr, value);
+        memory_accessed = true;
+    }
+    else{
+        status = SIM_OK;
+    }
+    if(status != SIM_OK){
+        sim->stats.errors++;
+        return status;
+    }
+
+    if(line){
+        line->block[get_block_offset(&sim->cache->layout, addr)] = value;
+        line->dirty = (sim->config.write_policy == WRITE_BACK);
     }
 
     sim->stats.writes++;
@@ -314,6 +433,9 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
     }
     else{
         sim->stats.write_misses++;
+    }
+    if(evicted){
+        sim->stats.evictions++;
     }
     if(new_page){
         sim->stats.pages_allocated++;
@@ -324,6 +446,9 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
         info->value = value;
         info->set_index = set_index;
         info->line_index = line_index;
+        info->evicted = evicted;
+        info->wrote_back = wrote_back;
+        info->memory_accessed = memory_accessed;
         info->page_allocated = new_page;
     }
     return SIM_OK;

@@ -17,6 +17,8 @@ void set_option_defaults(options_t *opts){
     opts->associativity = DEFAULT_ASSOCIATIVITY;
     opts->memory_size = DEFAULT_MAIN_MEMORY_SIZE;
     opts->policy = POLICY_LRU;
+    opts->write_policy = WRITE_THROUGH;
+    opts->write_allocate = false;
     opts->seed = DEFAULT_SEED;
     opts->trace_path = NULL;
     opts->format = FORMAT_HUMAN;
@@ -93,6 +95,9 @@ enum {
     OPT_ASSOCIATIVITY,
     OPT_MEMORY_SIZE,
     OPT_POLICY,
+    OPT_WRITE_POLICY,
+    OPT_WRITE_ALLOCATE,
+    OPT_NO_WRITE_ALLOCATE,
     OPT_SEED,
     OPT_FORMAT
 };
@@ -107,6 +112,9 @@ static const struct option LONG_OPTIONS[] = {
     {"associativity", required_argument, NULL, OPT_ASSOCIATIVITY},
     {"memory-size",   required_argument, NULL, OPT_MEMORY_SIZE},
     {"policy",        required_argument, NULL, OPT_POLICY},
+    {"write-policy",  required_argument, NULL, OPT_WRITE_POLICY},
+    {"write-allocate", no_argument,      NULL, OPT_WRITE_ALLOCATE},
+    {"no-write-allocate", no_argument,   NULL, OPT_NO_WRITE_ALLOCATE},
     {"seed",          required_argument, NULL, OPT_SEED},
     {"format",        required_argument, NULL, OPT_FORMAT},
     {NULL,            0,                 NULL, 0}
@@ -181,6 +189,25 @@ int parse_args(int argc, char **argv, options_t *opts){
                               optarg);
                     return -1;
                 }
+                break;
+
+            case OPT_WRITE_POLICY:
+                if(empty_value("--write-policy", optarg)){
+                    return -1;
+                }
+                if(parse_write_policy(optarg, &opts->write_policy) != 0){
+                    log_error("Error: --write-policy expects through or back (got '%s')\n",
+                              optarg);
+                    return -1;
+                }
+                break;
+
+            case OPT_WRITE_ALLOCATE:
+                opts->write_allocate = true;
+                break;
+
+            case OPT_NO_WRITE_ALLOCATE:
+                opts->write_allocate = false;
                 break;
 
             case OPT_SEED:
@@ -262,6 +289,8 @@ int build_config(const options_t *opts, config_t *config){
     config->lines_per_set = opts->associativity;
     config->main_memory_size = opts->memory_size;
     config->replacement_policy = opts->policy;
+    config->write_policy = opts->write_policy;
+    config->write_allocate = opts->write_allocate;
     config->seed = opts->seed;
 
     if(config_derive_sets(config, opts->cache_size) != 0){
@@ -315,6 +344,9 @@ void print_usage(const char *program){
     printf("      --policy NAME       LRU, RANDOM or FIFO (default: LRU)\n");
     printf("  The number of sets follows from these: size / (block-size x associativity).\n");
     printf("\nOther options\n");
+    printf("      --write-policy NAME through or back (default: through)\n");
+    printf("      --write-allocate    fill the cache on a write miss\n");
+    printf("      --no-write-allocate bypass it on a write miss (default)\n");
     printf("      --memory-size N     bytes of main memory (default: %d)\n",
            DEFAULT_MAIN_MEMORY_SIZE);
     printf("      --seed N            seed for RANDOM replacement (default: %d)\n",

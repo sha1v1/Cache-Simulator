@@ -41,6 +41,7 @@ int initialize_sets(set_t *sets, int num_sets, int lines_per_set,
         {
             line_t *line = &sets[i].cache_lines[j];
             line->valid_bit = false;
+            line->dirty = false;
             line->tag = 0;
             line->last_access_time = 0;
             line->inserted_at = 0;
@@ -203,6 +204,14 @@ int address_layout_init(address_layout_t *layout, int block_size, int num_sets)
 unsigned int get_tag_bits(const address_layout_t *layout, unsigned int addr)
 {
     return addr >> layout->tag_shift;
+}
+
+/** Reconstructs the first byte address of a resident block. */
+unsigned int get_block_address(const address_layout_t *layout, int set_index,
+                               unsigned int tag)
+{
+    return (tag << layout->tag_shift)
+         | ((unsigned int)set_index << layout->offset_bits);
 }
 
 /**
@@ -373,6 +382,7 @@ void update_cache(cache_t *cache, line_t *line, unsigned int tag_bits,
                   const uint8_t *block_data, int block_size)
 {
     line->valid_bit = true;
+    line->dirty = false;
     line->tag = tag_bits;
     line->last_access_time = ++cache->clock;
     line->inserted_at = cache->clock;

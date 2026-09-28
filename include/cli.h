@@ -49,6 +49,8 @@ typedef struct {
     int associativity;         //lines per set
     int memory_size;           //bytes of main memory
     replacement_policy_t policy;
+    write_policy_t write_policy;
+    bool write_allocate;
     unsigned int seed;         //fixed by default, so runs repeat
 
     const char *trace_path;    //the trace to run, or "-" for standard input;
