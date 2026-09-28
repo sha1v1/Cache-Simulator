@@ -179,7 +179,11 @@ sim_status_t sim_read(simulator_t *sim, unsigned int addr, access_info_t *info){
     //skipping the hits would leave it describing a different workload. The answer
     //is only spent below, if the real cache actually missed.
     unsigned long block = addr / (unsigned int)sim->cache->layout.block_size;
-    miss_kind_t kind = classifier_access(&sim->classifier, block, true);
+    miss_kind_t kind;
+    if(classifier_access(&sim->classifier, block, true, &kind) != 0){
+        sim->stats.errors++;
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
 
     if(hit == 1){
         //counted here rather than on entry: an access that fails is an error and
@@ -274,8 +278,13 @@ sim_status_t sim_write(simulator_t *sim, unsigned int addr, uint8_t value, acces
     //no-write-allocate does, so the reference stays a fair comparison. Its verdict
     //is not used: a write miss fills nothing, so there is no placement decision to
     //attribute to capacity or to conflict.
-    classifier_access(&sim->classifier,
-                      addr / (unsigned int)sim->cache->layout.block_size, false);
+    miss_kind_t unused_kind;
+    if(classifier_access(&sim->classifier,
+                         addr / (unsigned int)sim->cache->layout.block_size,
+                         false, &unused_kind) != 0){
+        sim->stats.errors++;
+        return SIM_ERR_OUT_OF_MEMORY;
+    }
     bool new_page = (sim->memory.page_table[page_index] == NULL);
 
     //write-through: every write reaches main memory. Memory goes first so a

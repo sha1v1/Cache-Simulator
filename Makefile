@@ -22,7 +22,8 @@ TARGET    = $(BUILDDIR)/cache_sim
 # nothing about caches and should not be able to start.
 GENTARGET = $(BUILDDIR)/gen_trace
 UNITYOBJ  = $(BUILDDIR)/unity.o
-TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_memory $(BUILDDIR)/test_sim
+TESTBINS  = $(BUILDDIR)/test_cache $(BUILDDIR)/test_classify \
+            $(BUILDDIR)/test_memory $(BUILDDIR)/test_sim
 HEADERS   = $(wildcard include/*.h)
 
 all: $(TARGET) $(GENTARGET)
@@ -50,6 +51,7 @@ tests: $(TESTBINS)
 
 test: $(TESTBINS) $(GENTARGET)
 	$(BUILDDIR)/test_cache
+	$(BUILDDIR)/test_classify
 	$(BUILDDIR)/test_memory
 	$(BUILDDIR)/test_sim
 	sh $(TESTDIR)/test_gen_trace.sh $(GENTARGET)
@@ -61,7 +63,8 @@ SANDIR     = $(BUILDDIR)/san
 SANFLAGS   = -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 SANOBJS    = $(patsubst $(SRCDIR)/%.c,$(SANDIR)/%.o,$(SRCS))
 SANLIBOBJS = $(patsubst $(SRCDIR)/%.c,$(SANDIR)/%.o,$(LIBSRCS))
-SANTESTS   = $(SANDIR)/test_cache $(SANDIR)/test_memory $(SANDIR)/test_sim
+SANTESTS   = $(SANDIR)/test_cache $(SANDIR)/test_classify \
+             $(SANDIR)/test_memory $(SANDIR)/test_sim
 
 $(SANDIR):
 	mkdir -p $(SANDIR)

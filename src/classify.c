@@ -1,4 +1,5 @@
 #include "../include/classify.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,7 +38,13 @@ static size_t seen_slot(const unsigned long *slots, size_t capacity,
 }
 
 static int seen_grow(classifier_t *classifier){
+    if(classifier->seen_capacity > SIZE_MAX / 2){
+        return -1;
+    }
     size_t capacity = classifier->seen_capacity * 2;
+    if(capacity > SIZE_MAX / sizeof(*classifier->seen)){
+        return -1;
+    }
     unsigned long *slots = malloc(capacity * sizeof(*slots));
     if(!slots){
         return -1;
@@ -60,33 +67,52 @@ static int seen_grow(classifier_t *classifier){
 /**
  * @brief Adds a block to the seen set.
  *
- * @return bool true if it was already there
+ * @param known filled with whether the block was already there
+ * @return int 0 on success, or -1 if the table needed to grow and could not
  *
- * A failure to grow is reported as "already seen", which understates the
- * compulsory count rather than inventing a miss that did not happen. It cannot be
- * signalled upward without giving every access a failure path for something that
- * only affects a statistic.
+ * Growth happens before insertion. If allocation fails, the table remains below
+ * its maximum load and the caller can fail the access cleanly; continuing to
+ * insert would eventually fill every slot and make seen_slot loop forever.
  */
-static bool seen_add(classifier_t *classifier, unsigned long block){
+static int seen_add(classifier_t *classifier, unsigned long block, bool *known){
+    //A full table has no EMPTY sentinel for seen_slot to stop at. This should be
+    //unreachable because growth happens at 70%, but keeps a damaged or exhausted
+    //table from turning one access into an infinite loop.
+    if(classifier->seen_count >= classifier->seen_capacity){
+        return -1;
+    }
+
     size_t i = seen_slot(classifier->seen, classifier->seen_capacity, block);
     if(classifier->seen[i] == block){
-        return true;
+        *known = true;
+        return 0;
+    }
+
+    //Compute floor(capacity * 7 / 10) without overflowing size_t.
+    size_t max_count = (classifier->seen_capacity / SEEN_MAX_LOAD_DENOMINATOR)
+                     * SEEN_MAX_LOAD_NUMERATOR
+                     + ((classifier->seen_capacity % SEEN_MAX_LOAD_DENOMINATOR)
+                        * SEEN_MAX_LOAD_NUMERATOR)
+                       / SEEN_MAX_LOAD_DENOMINATOR;
+    if(classifier->seen_count + 1 > max_count){
+        if(seen_grow(classifier) != 0){
+            return -1;
+        }
+        i = seen_slot(classifier->seen, classifier->seen_capacity, block);
     }
 
     classifier->seen[i] = block;
     classifier->seen_count++;
-
-    if(classifier->seen_count * SEEN_MAX_LOAD_DENOMINATOR
-       > classifier->seen_capacity * SEEN_MAX_LOAD_NUMERATOR){
-        seen_grow(classifier);
-    }
-    return false;
+    *known = false;
+    return 0;
 }
 
 int classifier_init(classifier_t *classifier, int total_blocks){
     memset(classifier, 0, sizeof(*classifier));
 
-    if(total_blocks <= 0){
+    if(total_blocks <= 0
+       || (size_t)total_blocks > SIZE_MAX / sizeof(*classifier->ways)
+       || (size_t)total_blocks > SIZE_MAX / sizeof(*classifier->used)){
         return -1;
     }
 
@@ -167,18 +193,27 @@ static bool shadow_access(classifier_t *classifier, unsigned long block,
     return false;
 }
 
-miss_kind_t classifier_access(classifier_t *classifier, unsigned long block,
-                              bool allocate){
+int classifier_access(classifier_t *classifier, unsigned long block,
+                      bool allocate, miss_kind_t *kind){
+    if(!classifier || !kind || !classifier->seen || classifier->seen_capacity == 0
+       || !classifier->ways || !classifier->used || classifier->way_count <= 0){
+        return -1;
+    }
+
     //the order matters: seen_add reports whether this is the first sight of the
     //block, so it has to run before anything else records having seen it
-    bool known = allocate ? seen_add(classifier, block)
-                          : true;   //a non-allocating access never brings it in
+    bool known = true;   //a non-allocating access never brings it in
+    if(allocate && seen_add(classifier, block, &known) != 0){
+        return -1;
+    }
 
     bool shadow_hit = shadow_access(classifier, block, allocate);
 
     if(!known){
-        return MISS_COMPULSORY;
+        *kind = MISS_COMPULSORY;
+        return 0;
     }
     //the reference had it, so the room existed and the mapping is what denied it
-    return shadow_hit ? MISS_CONFLICT : MISS_CAPACITY;
+    *kind = shadow_hit ? MISS_CONFLICT : MISS_CAPACITY;
+    return 0;
 }

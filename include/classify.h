@@ -65,7 +65,9 @@ void classifier_reset(classifier_t *classifier);
  *
  * @param block the block number accessed, i.e. address / block_size
  * @param allocate whether this access would bring the block in on a miss
- * @return miss_kind_t the classification that applies if the real cache missed
+ * @param kind filled with the classification that applies if the real cache
+ *        missed
+ * @return int 0 on success, or -1 if the seen-block set could not grow
  *
  * Must be called for every access that reaches the cache, hit or miss: the shadow
  * cache's contents depend on the whole sequence, so skipping the hits would leave
@@ -76,7 +78,7 @@ void classifier_reset(classifier_t *classifier);
  * in: such an access can still refresh a block already held, but must not insert
  * one, or the reference would be more generous than the cache it stands in for.
  */
-miss_kind_t classifier_access(classifier_t *classifier, unsigned long block,
-                              bool allocate);
+int classifier_access(classifier_t *classifier, unsigned long block,
+                      bool allocate, miss_kind_t *kind);
 
 #endif
